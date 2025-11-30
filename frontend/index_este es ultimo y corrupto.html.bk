@@ -1,0 +1,504 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZX Spectrum TOSEC Organizer</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin
+        src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .modal-backdrop {
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const API_BASE = 'http://localhost:5000/api';
+
+        const Icon = ({ name, className = "w-5 h-5" }) => {
+            const icons = {
+                folder: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
+                file: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>,
+                terminal: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
+                upload: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>,
+                refresh: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+                alert: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>,
+                check: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                clock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                zap: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
+                chart: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
+                loader: <svg className={`${className} animate-spin`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+                tree: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
+                settings: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+                trash: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+                plus: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+                x: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
+                copy: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
+                search: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            };
+            return icons[name] || icons.folder;
+        };
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('explorer');
+            const [selectedCollection, setSelectedCollection] = useState('FE');
+            const [collections, setCollections] = useState({});
+            const [currentStructure, setCurrentStructure] = useState(null);
+            const [currentPath, setCurrentPath] = useState([]);
+            const [currentItems, setCurrentItems] = useState([]);
+            const [tempFiles, setTempFiles] = useState([]);
+            const [rules, setRules] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [success, setSuccess] = useState(null);
+            const [showProcessModal, setShowProcessModal] = useState(false);
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [selectedDestinations, setSelectedDestinations] = useState({ FE: [], TS: [] });
+            const [processing, setProcessing] = useState(false);
+            const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+            const [browserPath, setBrowserPath] = useState([]);
+            const [browserFolders, setBrowserFolders] = useState([]);
+            const [currentRuleIndex, setCurrentRuleIndex] = useState(null);
+            const [browserCollection, setBrowserCollection] = useState('FE');
+
+            // Estados para el explorador de archivos (identificador)
+            const [showFileBrowser, setShowFileBrowser] = useState(false);
+            const [fileBrowserCollection, setFileBrowserCollection] = useState('TEMP');
+            const [fileBrowserPath, setFileBrowserPath] = useState([]);
+            const [fileBrowserItems, setFileBrowserItems] = useState([]);
+            const [fileBrowserLoading, setFileBrowserLoading] = useState(false);
+            const [fileSearchFilter, setFileSearchFilter] = useState('');
+
+            useEffect(() => { loadConfig(); }, []);
+            useEffect(() => { if (selectedCollection) loadCollectionStructure(selectedCollection); }, [selectedCollection]);
+
+            const loadConfig = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/config`);
+                    const data = await response.json();
+                    setCollections(data.collections);
+                } catch (err) {
+                    setError('No se pudo conectar con el backend. ¿Está ejecutándose?');
+                }
+            };
+
+            const loadCollectionStructure = async (collection) => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const response = await fetch(`${API_BASE}/scan/${collection}`);
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else {
+                        setCurrentStructure(data);
+                        setCurrentPath([]);
+                        setCurrentItems([]);
+                    }
+                } catch (err) {
+                    setError(`Error al escanear ${collection}: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const loadFolderContents = async (folderPath) => {
+                setLoading(true);
+                try {
+                    const encodedPath = encodeURIComponent(folderPath);
+                    const response = await fetch(`${API_BASE}/browse/${selectedCollection}/${encodedPath}`);
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else setCurrentItems(data.items || []);
+                } catch (err) {
+                    setError(`Error al cargar carpeta: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const loadTempFiles = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/temp/scan`);
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else setTempFiles(data.files || []);
+                } catch (err) {
+                    setError(`Error al escanear TEMP: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const loadRules = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/rules/load`);
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else setRules(data.rules || []);
+                } catch (err) {
+                    setError(`Error al cargar reglas: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const saveRules = async () => {
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/rules/save`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rules })
+                    });
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else setSuccess('Reglas guardadas correctamente');
+                } catch (err) {
+                    setError(`Error al guardar reglas: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const deleteRule = async (index) => {
+                if (!confirm('¿Eliminar esta regla?')) return;
+                setLoading(true);
+                try {
+                    const response = await fetch(`${API_BASE}/rules/delete/${index}`, { method: 'DELETE' });
+                    const data = await response.json();
+                    if (data.error) setError(data.error);
+                    else {
+                        setSuccess(`Regla eliminada: ${data.deleted}`);
+                        loadRules();
+                    }
+                } catch (err) {
+                    setError(`Error al eliminar regla: ${err.message}`);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const addRule = () => setRules([...rules, { identifier: '', categories: [''] }]);
+            const updateRule = (index, field, value) => { const newRules = [...rules]; newRules[index][field] = value; setRules(newRules); };
+            const updateRuleCategory = (ruleIndex, catIndex, value) => { const newRules = [...rules]; newRules[ruleIndex].categories[catIndex] = value; setRules(newRules); };
+            const removeCategory = (ruleIndex, catIndex) => { const newRules = [...rules]; newRules[ruleIndex].categories.splice(catIndex, 1); setRules(newRules); };
+
+            const openProcessModal = (file) => { setSelectedFile(file); setSelectedDestinations({ FE: file.suggested_paths?.FE || [], TS: file.suggested_paths?.TS || [] }); setShowProcessModal(true); };
+
+            const toggleDestination = (collection, path) => {
+                setSelectedDestinations(prev => {
+                    const current = prev[collection] || [];
+                                        <div className="w-12 h-12 bg-gradient-to-br from-cyan-400 to-purple-500 rounded-lg flex items-center justify-center"><Icon name="terminal" className="w-6 h-6" /></div>
+                                        <div>
+                                            <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">ZX Spectrum TOSEC Organizer</h1>
+                                            <p className="text-sm text-gray-400">Gestión visual de colecciones v40.9</p>
+                                        </div>
+                                    </div >
+                <div className="flex gap-3">
+                    <button onClick={loadTempFiles} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition flex items-center gap-2"><Icon name="upload" className="w-4 h-4" />Escanear TEMP</button>
+                    <button onClick={() => loadCollectionStructure(selectedCollection)} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition"><Icon name="refresh" className="w-5 h-5" /></button>
+                </div>
+                                </div >
+                            </div >
+                <div className="px-6 flex gap-1 border-t border-purple-500/20">
+                    {[{ id: 'explorer', label: 'Explorador', icon: 'tree' }, { id: 'updates', label: 'Updates', icon: 'zap', badge: tempFiles.length }, { id: 'rules', label: 'Reglas', icon: 'settings' }].map(tab => (
+                        <button key={tab.id} onClick={() => { setActiveTab(tab.id); if (tab.id === 'updates' && tempFiles.length === 0) loadTempFiles(); if (tab.id === 'rules' && rules.length === 0) loadRules(); }} className={`px-4 py-3 flex items-center gap-2 transition relative ${activeTab === tab.id ? 'text-cyan-400' : 'text-gray-400 hover:text-gray-200'}`}>
+                            <Icon name={tab.icon} className="w-4 h-4" />{tab.label}
+                            {tab.badge > 0 && <span className="px-2 py-0.5 bg-yellow-500 text-black text-xs rounded-full font-bold">{tab.badge}</span>}
+                            {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-400 to-purple-400" />}
+                        </button>
+                    ))}
+                </div>
+                        </header >
+
+                { error && <div className="mx-6 mt-4 p-4 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-3"><Icon name="alert" className="w-5 h-5 text-red-400" /><span className="text-red-200">{error}</span><button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-300">✕</button></div>
+        }
+        { success && <div className="mx-6 mt-4 p-4 bg-green-500/20 border border-green-500/50 rounded-lg flex items-center gap-3"><Icon name="check" className="w-5 h-5 text-green-400" /><span className="text-green-200">{success}</span><button onClick={() => setSuccess(null)} className="ml-auto text-green-400 hover:text-green-300">✕</button></div> }
+
+                        <div className="px-6 py-4 grid grid-cols-4 gap-4">
+                            {statsDisplay.map((stat, idx) => (
+                                <div key={idx} className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-lg p-4 hover:border-purple-500/40 transition">
+                                    <div className="flex items-center justify-between"><div><p className="text-gray-400 text-sm">{stat.label}</p><p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p></div><Icon name={stat.icon} className={`w-8 h-8 ${stat.color} opacity-50`} /></div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="px-6 pb-6">
+                            {activeTab === 'explorer' && (
+                                <div className="grid grid-cols-12 gap-4" style={{ height: 'calc(100vh - 300px)' }}>
+                                    <div className="col-span-3 bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-lg p-4 overflow-y-auto">
+                                        <h3 className="text-sm font-semibold text-gray-400 mb-3 flex items-center gap-2"><Icon name="tree" className="w-4 h-4" />COLECCIONES</h3>
+                                        {Object.entries(collections).map(([key, collection]) => (
+                                            <div key={key} className="mb-4">
+                                                <button onClick={() => { setSelectedCollection(key); setCurrentPath([]); setCurrentItems([]); }} className={`w-full text-left p-3 rounded-lg transition mb-2 ${selectedCollection === key ? 'bg-purple-600/30 border border-purple-500/50' : 'bg-gray-800/50 hover:bg-gray-800 border border-transparent'}`}>
+                                                    <div className="flex items-center gap-2 mb-1"><Icon name="folder" className={`w-4 h-4 ${collection.exists ? 'text-cyan-400' : 'text-red-400'}`} /><span className="font-semibold">{key}</span></div>
+                                                    <p className="text-xs text-gray-400">{collection.name}</p>
+                                                    {!collection.exists && <p className="text-xs text-red-400 mt-1">⚠️ No encontrada</p>}
+                                                </button>
+                                                {selectedCollection === key && currentStructure?.folders && (
+                                                    <div className="ml-4 space-y-1">
+                                                        {currentStructure.folders.map((folder, idx) => (
+                                                            <button key={idx} onClick={() => handleFolderClick(folder)} className="w-full text-left px-3 py-2 rounded text-sm transition flex items-center justify-between hover:bg-cyan-500/20 text-gray-300">
+                                                                <div className="flex items-center gap-2"><Icon name="folder" className="w-3 h-3" />{folder.name}</div>
+                                                                <span className="text-xs text-purple-400">{folder.file_count.toLocaleString()}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="col-span-9 bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-lg overflow-hidden flex flex-col">
+                                        <div className="border-b border-purple-500/20 p-4 bg-gray-900/50">
+                                            <div className="flex items-center gap-2 text-sm flex-wrap">
+                                                <span className="text-gray-400">Ruta:</span>
+                                                <button onClick={() => handleBreadcrumbClick(-1)} className="text-cyan-400 hover:text-cyan-300">{selectedCollection}</button>
+                                                {currentPath.map((segment, idx) => (<React.Fragment key={idx}><span className="text-gray-600">/</span><button onClick={() => handleBreadcrumbClick(idx)} className="text-purple-400 hover:text-purple-300">{segment}</button></React.Fragment>))}
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-4">
+                                            {loading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-8 h-8 text-cyan-400" /></div>
+                                                : currentPath.length === 0 && currentStructure?.folders ? <div className="text-center text-gray-400 py-12"><Icon name="tree" className="w-16 h-16 mx-auto mb-4 opacity-50" /><p>Selecciona una carpeta de la izquierda</p></div>
+                                                    : <div className="grid grid-cols-1 gap-2">
+                                                        {currentItems.map((item, idx) => (
+                                                            <div key={idx} onClick={() => item.type === 'folder' && handleFolderClick(item)} className={`p-3 rounded-lg border transition cursor-pointer ${item.at_limit ? 'bg-red-500/10 border-red-500/30' : item.near_limit ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50'}`}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-5 h-5 ${item.at_limit ? 'text-red-400' : item.near_limit ? 'text-yellow-400' : item.type === 'folder' ? 'text-cyan-400' : 'text-green-400'}`} />
+                                                                    <div className="flex-1">
+                                                                        <p className="font-medium">{item.name}</p>
+                                                                        <p className="text-xs text-gray-400">
+                                                                            {item.type === 'folder' && <>{item.direct_files !== undefined && item.direct_files !== item.file_count ? `${item.direct_files.toLocaleString()} directos (${item.file_count.toLocaleString()} total)` : `${item.file_count.toLocaleString()} archivos`}{item.at_limit && <span className="text-red-400 ml-2">⚠️ Límite ({item.direct_files})</span>}{item.near_limit && !item.at_limit && <span className="text-yellow-400 ml-2">⚠️ Cerca ({item.direct_files}/255)</span>}{item.is_range && <span className="text-purple-400 ml-2">📊 Rango</span>}</>}
+                                                                            {item.type === 'file' && <>{item.file_type} • {(item.size / 1024).toFixed(1)} KB</>}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'updates' && (
+                                <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-lg p-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-xl font-bold flex items-center gap-2"><Icon name="zap" className="w-6 h-6 text-yellow-400" />Archivos en TEMP</h2>
+                                        <button onClick={loadTempFiles} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition flex items-center gap-2"><Icon name="refresh" className="w-4 h-4" />Recargar</button>
+                                    </div>
+                                    {loading ? <div className="flex items-center justify-center py-12"><Icon name="loader" className="w-8 h-8 text-cyan-400" /></div>
+                                        : tempFiles.length === 0 ? <div className="text-center text-gray-400 py-12"><Icon name="check" className="w-16 h-16 mx-auto mb-4 opacity-50" /><p>No hay archivos en TEMP</p></div>
+                                            : <div className="space-y-3">
+                                                {tempFiles.map((file, idx) => (
+                                                    <div key={idx} className="p-4 rounded-lg border bg-gray-800/50 border-gray-700/50">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-3 mb-2">
+                                                                    <Icon name="file" className="w-5 h-5 text-cyan-400" />
+                                                                    <span className="font-medium">{file.name}</span>
+                                                                    <span className={`px-2 py-1 text-xs rounded ${file.tosec_info?.is_tosec ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>{file.tosec_info?.is_tosec ? 'TOSEC' : 'Sin TOSEC'}</span>
+                                                                </div>
+                                                                {file.tosec_info?.is_tosec && <div className="text-sm text-gray-400 mb-2">📅 {file.tosec_info.year} • 🏢 {file.tosec_info.publisher}</div>}
+                                                            </div>
+                                                            <button onClick={() => openProcessModal(file)} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition flex items-center gap-2"><Icon name="copy" className="w-4 h-4" />Procesar</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>}
+                                </div>
+                            )}
+
+                            {activeTab === 'rules' && (
+                                <div className="bg-black/40 backdrop-blur-sm border border-purple-500/20 rounded-lg p-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h2 className="text-xl font-bold flex items-center gap-2"><Icon name="settings" className="w-6 h-6 text-cyan-400" />Gestión de Reglas Personalizadas</h2>
+                                        <div className="flex gap-2">
+                                            <button onClick={addRule} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition flex items-center gap-2"><Icon name="plus" className="w-4 h-4" />Nueva Regla</button>
+                                            <button onClick={saveRules} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition flex items-center gap-2"><Icon name="check" className="w-4 h-4" />Guardar</button>
+                                        </div>
+                                    </div>
+                                    {loading ? <div className="flex items-center justify-center py-12"><Icon name="loader" className="w-8 h-8 text-cyan-400" /></div>
+                                        : <div className="space-y-4">
+                                            {rules.map((rule, ruleIdx) => (
+                                                <div key={ruleIdx} className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg">
+                                                    <div className="flex items-start gap-4">
+                                                        <div className="flex-1 space-y-3">
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <label className="text-sm text-gray-400">Identificador</label>
+                                                                    <button onClick={() => openFileBrowser(ruleIdx)} className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 rounded transition text-sm flex items-center gap-1"><Icon name="search" className="w-3 h-3" />Explorar Archivos</button>
+                                                                </div>
+                                                                <input type="text" value={rule.identifier} onChange={(e) => updateRule(ruleIdx, 'identifier', e.target.value)} className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white" placeholder="Nombre del juego" />
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <label className="text-sm text-gray-400">Categorías</label>
+                                                                    <button onClick={() => openFolderBrowser(ruleIdx)} className="px-3 py-1 bg-cyan-600 hover:bg-cyan-700 rounded transition text-sm flex items-center gap-1"><Icon name="folder" className="w-3 h-3" />Explorar</button>
+                                                                </div>
+                                                                {rule.categories.map((cat, catIdx) => (
+                                                                    <div key={catIdx} className="flex gap-2 mb-2">
+                                                                        <input type="text" value={cat} onChange={(e) => updateRuleCategory(ruleIdx, catIdx, e.target.value)} className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white text-sm" placeholder="04 SELECCIONES/Arcade" />
+                                                                        <button onClick={() => removeCategory(ruleIdx, catIdx)} className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded transition"><Icon name="x" className="w-4 h-4" /></button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <button onClick={() => deleteRule(ruleIdx)} className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded transition"><Icon name="trash" className="w-5 h-5" /></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {rules.length === 0 && <div className="text-center text-gray-400 py-12"><Icon name="settings" className="w-16 h-16 mx-auto mb-4 opacity-50" /><p>No hay reglas configuradas</p><p className="text-sm">Haz clic en "Nueva Regla" para crear una</p></div>}
+                                        </div>}
+                                </div>
+                            )}
+                        </div>
+
+        {/* Modal procesar archivo */ }
+        {
+            showProcessModal && selectedFile && (
+                <div className="fixed inset-0 bg-black/60 modal-backdrop flex items-center justify-center p-4 z-50">
+                    <div className="bg-gray-900 border border-purple-500/30 rounded-lg max-w-4xl w-full max-h-[80vh] flex flex-col">
+                        <div className="p-6 border-b border-purple-500/20 flex items-center justify-between">
+                            <div><h3 className="text-xl font-bold text-cyan-400">Procesar Archivo</h3><p className="text-gray-400 mt-1">{selectedFile.name}</p></div>
+                            <button onClick={() => setShowProcessModal(false)} className="text-gray-400 hover:text-white"><Icon name="x" className="w-6 h-6" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            {['FE', 'TS'].map(col => (
+                                <div key={col} className="border border-gray-700 rounded-lg p-4">
+                                    <h4 className="text-lg font-semibold mb-3 text-purple-400">{col} - {col === 'FE' ? 'Full Edition' : 'The Spectrum'}</h4>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                        {selectedFile.suggested_paths?.[col]?.map((path, idx) => (
+                                            <label key={idx} className="flex items-center gap-3 p-2 hover:bg-gray-800 rounded cursor-pointer">
+                                                <input type="checkbox" checked={selectedDestinations[col]?.includes(path)} onChange={() => toggleDestination(col, path)} className="w-4 h-4 rounded" />
+                                                <span className="text-sm text-gray-300">{path}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="p-6 border-t border-purple-500/20 flex justify-end gap-3">
+                            <button onClick={() => setShowProcessModal(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition">Cancelar</button>
+                            <button onClick={processFile} disabled={processing} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition flex items-center gap-2 disabled:opacity-50">
+                                {processing ? <><Icon name="loader" className="w-4 h-4" />Procesando...</> : <><Icon name="check" className="w-4 h-4" />Copiar</>}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        {/* Modal explorar carpetas (categorías) */ }
+        {
+            showFolderBrowser && (
+                <div className="fixed inset-0 bg-black/60 modal-backdrop flex items-center justify-center p-4 z-50">
+                    <div className="bg-gray-900 border border-purple-500/30 rounded-lg max-w-3xl w-full max-h-[80vh] flex flex-col">
+                        <div className="p-6 border-b border-purple-500/20">
+                            <div className="flex items-center justify-between mb-4"><h3 className="text-xl font-bold text-cyan-400">Explorar Carpetas</h3><button onClick={() => setShowFolderBrowser(false)} className="text-gray-400 hover:text-white"><Icon name="x" className="w-6 h-6" /></button></div>
+                            <div className="flex gap-2">
+                                <button onClick={() => switchBrowserCollection('FE')} className={`px-4 py-2 rounded transition ${browserCollection === 'FE' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>FE (Full Edition)</button>
+                                <button onClick={() => switchBrowserCollection('TS')} className={`px-4 py-2 rounded transition ${browserCollection === 'TS' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}>TS (The Spectrum)</button>
+                            </div>
+                        </div>
+                        <div className="px-6 py-3 bg-gray-800/50 border-b border-gray-700">
+                            <div className="flex items-center gap-2 text-sm flex-wrap">
+                                <Icon name="folder" className="w-4 h-4 text-cyan-400" />
+                                <button onClick={() => browserGoBack(-1)} className="text-cyan-400 hover:text-cyan-300">{browserCollection}</button>
+                                {browserPath.map((segment, idx) => (<React.Fragment key={idx}><span className="text-gray-600">/</span><button onClick={() => browserGoBack(idx)} className="text-purple-400 hover:text-purple-300">{segment}</button></React.Fragment>))}
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <div className="grid grid-cols-1 gap-2">
+                                {browserFolders.map((folder, idx) => (
+                                    <button key={idx} onClick={() => browserNavigate(folder)} className="p-3 bg-gray-800/50 border border-gray-700/50 rounded-lg hover:border-purple-500/50 hover:bg-gray-800 transition text-left flex items-center gap-3">
+                                        <Icon name="folder" className="w-5 h-5 text-cyan-400" /><span className="flex-1">{folder.name}</span>{folder.has_subfolders && <span className="text-xs text-gray-500">→</span>}
+                                    </button>
+                                ))}
+                                {browserFolders.length === 0 && <div className="text-center text-gray-400 py-12"><Icon name="folder" className="w-16 h-16 mx-auto mb-4 opacity-50" /><p>No hay subcarpetas</p></div>}
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-purple-500/20 flex justify-between items-center">
+                            <div className="text-sm text-gray-400">Ruta: <span className="text-cyan-400">{browserPath.join('/') || '(raíz)'}</span></div>
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowFolderBrowser(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition">Cancelar</button>
+                                <button onClick={selectCurrentPath} className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition flex items-center gap-2"><Icon name="check" className="w-4 h-4" />Seleccionar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+
+        {/* Modal explorador de archivos (FE, TS, TEMP) */ }
+        {
+            showFileBrowser && (
+                <div className="fixed inset-0 bg-black/60 modal-backdrop flex items-center justify-center p-4 z-50">
+                    <div className="bg-gray-900 border border-yellow-500/30 rounded-lg max-w-4xl w-full max-h-[85vh] flex flex-col">
+                        <div className="p-6 border-b border-yellow-500/20">
+                            <div className="flex items-center justify-between mb-4"><h3 className="text-xl font-bold text-yellow-400 flex items-center gap-2"><Icon name="search" className="w-6 h-6" />Explorar Archivos</h3><button onClick={() => setShowFileBrowser(false)} className="text-gray-400 hover:text-white"><Icon name="x" className="w-6 h-6" /></button></div>
+                            <p className="text-gray-400 text-sm mb-4">Navega y selecciona un archivo para usar su nombre como identificador</p>
+                            <div className="flex gap-2 mb-4">
+                                <button onClick={() => switchFileBrowserCollection('TEMP')} className={`px-4 py-2 rounded transition flex items-center gap-2 ${fileBrowserCollection === 'TEMP' ? 'bg-yellow-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}><Icon name="zap" className="w-4 h-4" />TEMP</button>
+                                <button onClick={() => switchFileBrowserCollection('FE')} className={`px-4 py-2 rounded transition flex items-center gap-2 ${fileBrowserCollection === 'FE' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}><Icon name="folder" className="w-4 h-4" />FE (Full Edition)</button>
+                                <button onClick={() => switchFileBrowserCollection('TS')} className={`px-4 py-2 rounded transition flex items-center gap-2 ${fileBrowserCollection === 'TS' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}><Icon name="folder" className="w-4 h-4" />TS (The Spectrum)</button>
+                            </div>
+                            <div className="relative"><Icon name="search" className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2" /><input type="text" value={fileSearchFilter} onChange={(e) => setFileSearchFilter(e.target.value)} placeholder="Filtrar por nombre..." className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none" /></div>
+                        </div>
+                        {fileBrowserCollection !== 'TEMP' && (
+                            <div className="px-6 py-3 bg-gray-800/50 border-b border-gray-700">
+                                <div className="flex items-center gap-2 text-sm flex-wrap">
+                                    <Icon name="folder" className="w-4 h-4 text-cyan-400" />
+                                    <button onClick={() => fileBrowserGoBack(-1)} className="text-cyan-400 hover:text-cyan-300">{fileBrowserCollection}</button>
+                                    {fileBrowserPath.map((segment, idx) => (<React.Fragment key={idx}><span className="text-gray-600">/</span><button onClick={() => fileBrowserGoBack(idx)} className="text-purple-400 hover:text-purple-300">{segment}</button></React.Fragment>))}
+                                </div>
+                            </div>
+                        )}
+                        <div className="flex-1 overflow-y-auto p-6">
+                            {fileBrowserLoading ? <div className="flex items-center justify-center py-12"><Icon name="loader" className="w-8 h-8 text-yellow-400" /></div>
+                                : filteredFileBrowserItems.length === 0 ? <div className="text-center text-gray-400 py-12"><Icon name="file" className="w-16 h-16 mx-auto mb-4 opacity-50" /><p>{fileSearchFilter ? 'No se encontraron resultados' : 'No hay elementos'}</p></div>
+                                    : <div className="space-y-2">
+                                        {filteredFileBrowserItems.map((item, idx) => (
+                                            <button key={idx} onClick={() => item.type === 'folder' ? fileBrowserNavigate(item) : selectFileAsIdentifier(item)} className={`w-full p-4 border rounded-lg transition text-left flex items-center gap-3 ${item.type === 'folder' ? 'bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50' : 'bg-gray-800/50 border-gray-700/50 hover:border-yellow-500/50'} hover:bg-gray-800`}>
+                                                <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-5 h-5 ${item.type === 'folder' ? 'text-cyan-400' : 'text-yellow-400'}`} />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium truncate">{item.name}</p>
+                                                    {item.type === 'folder' && <p className="text-sm text-gray-400">{item.file_count?.toLocaleString() || 0} archivos</p>}
+                                                    {item.type === 'file' && item.tosec_info?.is_tosec && <p className="text-sm text-gray-400 mt-1"><span className="text-green-400">Título:</span> {item.tosec_info.title} <span className="mx-2">•</span> 📅 {item.tosec_info.year} <span className="mx-2">•</span> 🏢 {item.tosec_info.publisher}</p>}
+                                                </div>
+                                                {item.type === 'folder' ? <span className="text-xs text-gray-500">→</span> : <span className={`px-2 py-1 text-xs rounded whitespace-nowrap ${item.tosec_info?.is_tosec ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>{item.tosec_info?.is_tosec ? 'TOSEC' : 'Sin TOSEC'}</span>}
+                                            </button>
+                                        ))}
+                                    </div>}
+                        </div>
+                        <div className="p-6 border-t border-yellow-500/20 flex justify-between items-center">
+                            <div className="text-sm text-gray-400">{fileBrowserCollection === 'TEMP' ? `${filteredFileBrowserItems.filter(i => i.type === 'file').length} archivo(s)` : `${filteredFileBrowserItems.filter(i => i.type === 'folder').length} carpeta(s), ${filteredFileBrowserItems.filter(i => i.type === 'file').length} archivo(s)`}</div>
+                            <button onClick={() => setShowFileBrowser(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+            )
+        }
+                    </div >
+                );
+            }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>
