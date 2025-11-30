@@ -8,16 +8,10 @@ import shutil
 class DirectoryScanner:
     """Clase para escanear y analizar la estructura de carpetas TOSEC"""
     
-    # Extensiones válidas para archivos ZX Spectrum
     VALID_EXTENSIONS = {'.tap', '.tzx', '.z80', '.sna', '.dsk', '.trd', '.scl', '.img', '.zip'}
-    
-    # Extensiones de archivos comunes que se pueden abrir
     COMMON_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.txt', '.doc', '.docx', '.xls', '.xlsx'}
-    
-    # Todas las extensiones que mostramos en la interfaz
     ALL_DISPLAYABLE = VALID_EXTENSIONS | COMMON_EXTENSIONS
     
-    # Tipos de archivo para clasificación
     FILE_TYPES = {
         '.tap': 'TAPs',
         '.tzx': 'TZXs',
@@ -34,10 +28,7 @@ class DirectoryScanner:
         self.config = config
     
     def scan_root_folders(self, base_path: str, max_depth: int = 3) -> Dict[str, Any]:
-        """
-        Escanea las carpetas raíz de una colección (FE o TS)
-        OPTIMIZADO: Conteo rápido con os.walk
-        """
+        """Escanea las carpetas raíz - CONTEO COMPLETO con os.walk"""
         if not os.path.exists(base_path):
             return {'error': f'La ruta {base_path} no existe', 'folders': []}
         
@@ -49,7 +40,8 @@ class DirectoryScanner:
                 item_path = os.path.join(base_path, item)
                 
                 if os.path.isdir(item_path):
-                    file_count = self._count_files_fast(item_path)
+                    # Conteo COMPLETO con os.walk para precisión
+                    file_count = self._count_all_files(item_path)
                     
                     folders.append({
                         'name': item,
@@ -71,24 +63,18 @@ class DirectoryScanner:
         except Exception as e:
             return {'error': str(e), 'folders': []}
     
-    def _count_files_fast(self, path: str) -> int:
-        """Conteo RÁPIDO usando os.walk - cuenta TODOS los archivos relevantes"""
+    def _count_all_files(self, path: str) -> int:
+        """Conteo COMPLETO de TODOS los archivos usando os.walk"""
         count = 0
         try:
             for root, dirs, files in os.walk(path):
-                for f in files:
-                    ext = os.path.splitext(f)[1].lower()
-                    if ext in self.ALL_DISPLAYABLE:
-                        count += 1
+                count += len(files)  # Contar TODOS los archivos
         except (PermissionError, OSError):
             pass
         return count
     
     def get_folder_contents(self, folder_path: str, include_files: bool = True, collection: str = None) -> Dict[str, Any]:
-        """
-        Obtiene el contenido de una carpeta específica
-        MEJORADO: Muestra archivos comunes (PDF, JPG, PNG) y permite abrirlos
-        """
+        """Obtiene el contenido de una carpeta específica"""
         if not os.path.exists(folder_path):
             return {'error': 'Carpeta no encontrada', 'items': []}
         
@@ -103,7 +89,7 @@ class DirectoryScanner:
                 item_path = os.path.join(folder_path, item)
                 
                 if os.path.isdir(item_path):
-                    total_files = self._count_files_limited(item_path, max_depth=2)
+                    total_files = self._count_files_limited(item_path, max_depth=3)
                     direct_files = self._count_direct_files(item_path)
                     
                     if is_ts_collection:
@@ -130,7 +116,6 @@ class DirectoryScanner:
                 elif include_files:
                     ext = os.path.splitext(item)[1].lower()
                     
-                    # Mostrar TODOS los archivos relevantes
                     if ext in self.ALL_DISPLAYABLE:
                         is_spectrum_file = ext in self.VALID_EXTENSIONS
                         is_common_file = ext in self.COMMON_EXTENSIONS
@@ -152,6 +137,7 @@ class DirectoryScanner:
                             'is_spectrum': is_spectrum_file,
                             'is_common': is_common_file,
                             'can_open': is_common_file,
+                            'can_emulate': is_spectrum_file,
                             'full_path': item_path,
                             'path': item
                         })
@@ -169,7 +155,7 @@ class DirectoryScanner:
             return {'error': str(e), 'items': []}
     
     def scan_temp_files(self, temp_path: str) -> Dict[str, Any]:
-        """Escanea archivos en TEMP - incluye todos los archivos"""
+        """Escanea archivos en TEMP"""
         if not os.path.exists(temp_path):
             return {'error': 'Carpeta TEMP no encontrada', 'files': []}
         
@@ -196,6 +182,8 @@ class DirectoryScanner:
                             'is_spectrum': True,
                             'is_common': False,
                             'can_delete': True,
+                            'can_emulate': True,
+                            'full_path': item_path,
                             'status': 'pending'
                         })
                     
@@ -218,16 +206,14 @@ class DirectoryScanner:
             return {
                 'path': temp_path,
                 'files': files,
-                'total_files': len(files),
-                'spectrum_files': len([f for f in files if f.get('is_spectrum')]),
-                'common_files': len([f for f in files if f.get('is_common')])
+                'total_files': len(files)
             }
         
         except Exception as e:
             return {'error': str(e), 'files': []}
     
     def delete_temp_file(self, filename: str) -> Dict[str, Any]:
-        """Elimina un archivo de la carpeta TEMP"""
+        """Elimina un archivo de TEMP"""
         file_path = os.path.join(self.config['TEMP_PATH'], filename)
         
         if not os.path.exists(file_path):
@@ -239,20 +225,8 @@ class DirectoryScanner:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def calculate_stats(self, fe_path: str, ts_path: str) -> Dict[str, Any]:
-        """Calcula estadísticas generales de ambas colecciones"""
-        stats = {
-            'FE': self._get_collection_stats(fe_path),
-            'TS': self._get_collection_stats(ts_path),
-            'comparison': {}
-        }
-        stats['comparison'] = {
-            'difference': stats['FE']['total_files'] - stats['TS']['total_files']
-        }
-        return stats
-    
     def copy_file_to_destinations(self, source_file: str, destinations: List[str], collection: str) -> Dict[str, Any]:
-        """Copia un archivo desde TEMP a múltiples destinos"""
+        """Copia un archivo a múltiples destinos"""
         results = {
             'success': [],
             'errors': [],
@@ -280,7 +254,7 @@ class DirectoryScanner:
         return results
     
     def process_temp_file(self, filename: str, selected_destinations: Dict[str, List[str]]) -> Dict[str, Any]:
-        """Procesa un archivo de TEMP y lo copia a los destinos seleccionados"""
+        """Procesa un archivo de TEMP"""
         source_file = os.path.join(self.config['TEMP_PATH'], filename)
         
         results = {
@@ -303,7 +277,7 @@ class DirectoryScanner:
         
         return results
     
-    def _count_files_limited(self, path: str, max_depth: int = 2, current_depth: int = 0) -> int:
+    def _count_files_limited(self, path: str, max_depth: int = 3, current_depth: int = 0) -> int:
         """Cuenta archivos con límite de profundidad"""
         if current_depth >= max_depth:
             return 0
@@ -314,9 +288,7 @@ class DirectoryScanner:
                 item_path = os.path.join(path, item)
                 
                 if os.path.isfile(item_path):
-                    ext = os.path.splitext(item)[1].lower()
-                    if ext in self.ALL_DISPLAYABLE:
-                        count += 1
+                    count += 1
                 elif os.path.isdir(item_path):
                     count += self._count_files_limited(item_path, max_depth, current_depth + 1)
         except (PermissionError, OSError):
@@ -325,21 +297,18 @@ class DirectoryScanner:
         return count
     
     def _count_direct_files(self, path: str) -> int:
-        """Cuenta SOLO los archivos directos en una carpeta"""
+        """Cuenta solo archivos directos"""
         count = 0
         try:
             for item in os.listdir(path):
-                item_path = os.path.join(path, item)
-                if os.path.isfile(item_path):
-                    ext = os.path.splitext(item)[1].lower()
-                    if ext in self.ALL_DISPLAYABLE:
-                        count += 1
+                if os.path.isfile(os.path.join(path, item)):
+                    count += 1
         except (PermissionError, OSError):
             pass
         return count
     
     def _has_subfolders(self, path: str) -> bool:
-        """Verifica si una carpeta tiene subcarpetas"""
+        """Verifica si tiene subcarpetas"""
         try:
             for item in os.listdir(path):
                 if os.path.isdir(os.path.join(path, item)):
@@ -349,18 +318,18 @@ class DirectoryScanner:
         return False
     
     def _is_range_folder(self, folder_name: str) -> bool:
-        """Detecta si una carpeta es un rango alfabético"""
+        """Detecta carpeta de rango alfabético"""
         return bool(re.match(r'^[A-Z0-9].*\s*-\s*[A-Z0-9].*$', folder_name, re.IGNORECASE))
     
     def _parse_range_folder(self, folder_name: str) -> tuple:
-        """Parsea una carpeta de rango"""
+        """Parsea carpeta de rango"""
         parts = re.split(r'\s*-\s*', folder_name)
         if len(parts) >= 2:
             return (parts[0].strip().upper(), parts[1].strip().upper())
         return (folder_name.upper(), folder_name.upper())
 
     def _longest_common_prefix(self, s1: str, s2: str) -> str:
-        """Calcula el prefijo común más largo entre dos cadenas"""
+        """Calcula prefijo común más largo"""
         min_len = min(len(s1), len(s2))
         for i in range(min_len):
             if s1[i] != s2[i]:
@@ -368,7 +337,7 @@ class DirectoryScanner:
         return s1[:min_len]
 
     def _find_range_folder(self, base_path: str, title: str) -> Optional[str]:
-        """Busca la carpeta de rango correcta para un título dado con lógica LCP"""
+        """Busca carpeta de rango correcta con lógica LCP"""
         if not os.path.exists(base_path):
             return None
         
@@ -415,8 +384,62 @@ class DirectoryScanner:
         
         return None
 
+    def _find_letter_range_folder(self, base_path: str, title: str) -> Optional[str]:
+        """
+        Busca carpeta de rango por letra inicial (123-L o M-Z)
+        Para la estructura de AÑOS en TS
+        """
+        if not os.path.exists(base_path):
+            return None
+        
+        try:
+            subfolders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+            range_folders = [f for f in subfolders if self._is_range_folder(f)]
+            
+            if not range_folders:
+                return None
+            
+            # Obtener primera letra/carácter del título
+            first_char = ''
+            for char in title.upper():
+                if char.isalnum():
+                    first_char = char
+                    break
+            
+            if not first_char:
+                first_char = '1'
+            
+            # Buscar en qué rango cae
+            for folder in sorted(range_folders):
+                start, end = self._parse_range_folder(folder)
+                
+                # Comparar solo el primer carácter
+                start_char = start[0] if start else ''
+                end_char = end[0] if end else ''
+                
+                # Si es número, va en el rango que empiece por número
+                if first_char.isdigit():
+                    if start_char.isdigit() or start_char == '1':
+                        return folder
+                else:
+                    # Si es letra, comparar alfabéticamente
+                    if start_char <= first_char <= end_char:
+                        return folder
+                    # Caso especial: 123-L incluye letras A-L
+                    if start_char.isdigit() and end_char.isalpha():
+                        if first_char <= end_char:
+                            return folder
+            
+            # Si no encontró, devolver el último
+            return sorted(range_folders)[-1] if range_folders else None
+                    
+        except (PermissionError, OSError):
+            pass
+        
+        return None
+
     def _parse_tosec_filename(self, filename: str) -> Dict[str, Any]:
-        """Parsea un nombre de archivo TOSEC"""
+        """Parsea nombre de archivo TOSEC"""
         pattern = r'^(?P<title>.*?)\s*\((?P<year>\d{4}(?:-\d{4})?|19xx|20xx)\)\((?P<publisher>.*?)\)'
         match = re.match(pattern, filename)
         
@@ -478,14 +501,14 @@ class DirectoryScanner:
         }
 
     def _create_game_folder_name(self, title: str) -> str:
-        """Crea el nombre de la carpeta del juego"""
+        """Crea nombre de carpeta del juego"""
         clean = re.sub(r'\s+v\.?\s?\d+(\.\d+)*(\s?beta|\s?alpha)?$', '', title, flags=re.IGNORECASE).strip()
         clean = re.sub(r'\s+(?:[2-9]|I{2,3}|IV|V|VI|VII|VIII|IX|X|part\s+\d+|p\d+)$', '', clean, flags=re.IGNORECASE).strip()
         clean = re.sub(r'[<>:"/\\|?*]', '_', clean)
         return clean.upper()
 
     def _suggest_destination(self, tosec_info: Dict[str, Any], extension: str, original_filename: str) -> Dict[str, List[str]]:
-        """Sugiere rutas de destino"""
+        """Sugiere rutas de destino - CORREGIDO para rangos en AÑOS de TS"""
         title = tosec_info.get('title', '').strip()
         years = tosec_info.get('years', [])
         year_int = tosec_info.get('year_int', 0)
@@ -526,6 +549,7 @@ class DirectoryScanner:
         # === DESTINOS TS ===
         ts_base = "TOSEC_v40.9"
         
+        # 00 CARPETAS
         ts_carpetas_path = os.path.join(self.config['TS_PATH'], ts_base, "00 CARPETAS", letter)
         range_folder_carpetas = self._find_range_folder(ts_carpetas_path, title)
         if range_folder_carpetas:
@@ -533,6 +557,7 @@ class DirectoryScanner:
         else:
             suggestions['TS'].append(f"{ts_base}/00 CARPETAS/{letter}/{game_folder}/{filename}")
         
+        # 01 AÑOS - CORREGIDO: Buscar rangos 123-L / M-Z
         for year in years:
             if 1982 <= year <= 1993:
                 ts_year_path = os.path.join(self.config['TS_PATH'], ts_base, "01 AÑOS/1982-1993 CLASICOS", str(year), letter, file_type)
@@ -541,10 +566,19 @@ class DirectoryScanner:
                     suggestions['TS'].append(f"{ts_base}/01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{range_folder}/{filename}")
                 else:
                     suggestions['TS'].append(f"{ts_base}/01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{filename}")
+                    
             elif 1994 <= year <= 2025:
                 decade = self._get_decade_range(year)
-                suggestions['TS'].append(f"{ts_base}/01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{filename}")
+                # CORREGIDO: Buscar rangos en carpeta TAPs (123-L, M-Z)
+                ts_homebrew_year_path = os.path.join(self.config['TS_PATH'], ts_base, f"01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}")
+                letter_range = self._find_letter_range_folder(ts_homebrew_year_path, title)
+                
+                if letter_range:
+                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{letter_range}/{filename}")
+                else:
+                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{filename}")
         
+        # 02 CLASICOS
         if any(1982 <= y <= 1993 for y in years):
             ts_classic_path = os.path.join(self.config['TS_PATH'], ts_base, "02 CLASICOS/ALFABETO CLASICOS", letter, file_type)
             range_folder = self._find_range_folder(ts_classic_path, title)
@@ -553,6 +587,7 @@ class DirectoryScanner:
             else:
                 suggestions['TS'].append(f"{ts_base}/02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
         
+        # 03 HOMEBREW
         if any(1994 <= y <= 2025 for y in years):
             ts_homebrew_path = os.path.join(self.config['TS_PATH'], ts_base, "03 HOMEBREW/ALFABETO HOMEBREW", letter, file_type)
             range_folder = self._find_range_folder(ts_homebrew_path, title)
@@ -564,7 +599,7 @@ class DirectoryScanner:
         return suggestions
     
     def _get_initial_letter(self, title: str) -> str:
-        """Obtiene la letra inicial limpia"""
+        """Obtiene letra inicial"""
         if not title:
             return '123'
         for char in title:
@@ -575,41 +610,43 @@ class DirectoryScanner:
         return '123'
     
     def _get_decade_range(self, year: int) -> str:
-        """Calcula el rango de década"""
+        """Calcula rango de década"""
         if year < 1980:
             return "19XX"
         start = (year // 10) * 10
         end = start + 9
         return f"{start}-{end}"
     
+    def calculate_stats(self, fe_path: str, ts_path: str) -> Dict[str, Any]:
+        """Calcula estadísticas"""
+        stats = {
+            'FE': self._get_collection_stats(fe_path),
+            'TS': self._get_collection_stats(ts_path),
+            'comparison': {}
+        }
+        stats['comparison'] = {
+            'difference': stats['FE']['total_files'] - stats['TS']['total_files']
+        }
+        return stats
+    
     def _get_collection_stats(self, path: str) -> Dict[str, Any]:
-        """Obtiene estadísticas de una colección"""
+        """Obtiene estadísticas de colección"""
         if not os.path.exists(path):
-            return {'total_files': 0, 'total_all': 0, 'by_type': {}, 'by_decade': {}}
+            return {'total_files': 0, 'by_type': {}, 'by_decade': {}}
         
         stats = {
             'total_files': 0,
-            'total_all': 0,
             'by_type': defaultdict(int),
             'by_decade': defaultdict(int)
         }
         
         for root, dirs, files in os.walk(path):
+            stats['total_files'] += len(files)
             for file in files:
                 ext = os.path.splitext(file)[1].lower()
-                
-                if ext in self.ALL_DISPLAYABLE:
-                    stats['total_all'] += 1
-                
                 if ext in self.VALID_EXTENSIONS:
-                    stats['total_files'] += 1
                     file_type = self.FILE_TYPES.get(ext, 'OTROS')
                     stats['by_type'][file_type] += 1
-                    
-                    tosec_info = self._parse_tosec_filename(file)
-                    if tosec_info['year_int'] > 0:
-                        decade = self._get_decade_range(tosec_info['year_int'])
-                        stats['by_decade'][decade] += 1
         
         stats['by_type'] = dict(stats['by_type'])
         stats['by_decade'] = dict(stats['by_decade'])
