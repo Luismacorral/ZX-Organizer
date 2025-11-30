@@ -1,0 +1,29 @@
+# Archivos de Python y Carpetas de compilación
+# ---------------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Paquetes de instalación
+# ----------------------
+dist/
+build/
+*.egg-info/
+
+# Archivos de VSC
+# -------------
+.vscode/
+
+# Archivos de Sistema
+# -------------------
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos del frontend que parecen ser backups o corruptos
+# -----------------------------------------------------------------
+frontend/*.html.bk
+frontend/*este es ultimo y corrupto.html.bk
