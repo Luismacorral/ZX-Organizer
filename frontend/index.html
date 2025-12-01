@@ -41,7 +41,11 @@
                 copy: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
                 search: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>,
                 play: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-                open: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                open: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
+                archive: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>,
+                upload: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>,
+                server: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>,
+                lock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
             };
             return icons[name] || icons.folder;
         };
@@ -65,9 +69,7 @@
             const [success, setSuccess] = useState(null);
             const [copyLog, setCopyLog] = useState([]);
             
-            // Drag state guardado en ref para acceso inmediato
             const dragDataRef = useRef(null);
-            const [isDragging, setIsDragging] = useState(false);
             
             const [showProcessModal, setShowProcessModal] = useState(false);
             const [selectedFile, setSelectedFile] = useState(null);
@@ -88,8 +90,19 @@
             
             const [ruleSearchFilter, setRuleSearchFilter] = useState('');
             
-            // Emulador
-            const [emulatorFile, setEmulatorFile] = useState(null);
+            // Compresión
+            const [compressCollection, setCompressCollection] = useState('FE');
+            const [compressDestPath, setCompressDestPath] = useState('C:\\ZX\\Backups');
+            const [compressVolumeSize, setCompressVolumeSize] = useState(4700);
+            const [compressFormat, setCompressFormat] = useState('zip');
+            const [compressing, setCompressing] = useState(false);
+            
+            // Backup NAS
+            const [backupFiles, setBackupFiles] = useState([]);
+            const [selectedBackupFiles, setSelectedBackupFiles] = useState([]);
+            const [ftpPassword, setFtpPassword] = useState('');
+            const [uploading, setUploading] = useState(false);
+            const [uploadProgress, setUploadProgress] = useState(null);
 
             useEffect(() => { loadStructures(); }, []);
 
@@ -101,9 +114,7 @@
                     ]);
                     setFeStructure(await feRes.json());
                     setTsStructure(await tsRes.json());
-                } catch (err) {
-                    setError('Error cargando estructuras');
-                }
+                } catch (err) { setError('Error cargando estructuras'); }
             };
 
             const loadPanelContents = async (collection, pathArray, setItems, setLoading) => {
@@ -113,12 +124,8 @@
                     const response = await fetch(`${API_BASE}/browse/${collection}/${encodeURIComponent(pathStr)}`);
                     const data = await response.json();
                     setItems(data.error ? [] : (data.items || []));
-                    if (data.error) setError(data.error);
-                } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
+                } catch (err) { setError(err.message); } 
+                finally { setLoading(false); }
             };
 
             const loadTempFiles = async () => {
@@ -150,148 +157,53 @@
                 } catch (err) { setError(err.message); }
             };
 
-            // Abrir archivo (PDF, imágenes, etc.)
             const openFile = async (filePath) => {
                 try {
-                    const response = await fetch(`${API_BASE}/open-file`, {
+                    await fetch(`${API_BASE}/open-file`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ path: filePath })
                     });
-                    const data = await response.json();
-                    if (!data.success) setError(data.error);
                 } catch (err) { setError(err.message); }
             };
 
-            // Cargar en emulador - abre JSSpeccy en nueva ventana con el archivo
-            const loadInEmulator = async (filePath, fileName) => {
-                setEmulatorFile({ path: filePath, name: fileName, loading: true });
-                setSuccess(`Cargando ${fileName} en emulador...`);
-                
-                // Usamos JSSpeccy online que permite cargar via URL
-                // Primero obtenemos el archivo en base64
-                try {
-                    const response = await fetch(`${API_BASE}/file-base64`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: filePath })
-                    });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        // Crear un blob y abrirlo con el emulador local
-                        const binary = atob(data.base64);
-                        const bytes = new Uint8Array(binary.length);
-                        for (let i = 0; i < binary.length; i++) {
-                            bytes[i] = binary.charCodeAt(i);
-                        }
-                        const blob = new Blob([bytes], { type: 'application/octet-stream' });
-                        const url = URL.createObjectURL(blob);
-                        
-                        // Abrir JSSpeccy con el archivo
-                        // JSSpeccy3 permite cargar archivos via hash URL
-                        const emulatorUrl = `https://nicofirst.github.io/web-zxspectrum/?file=${encodeURIComponent(url)}`;
-                        
-                        // Alternativa: abrir en nueva ventana con Qaop que permite drag&drop
-                        window.open(`https://torinak.com/qaop`, '_blank');
-                        
-                        setEmulatorFile({ ...data, url, loading: false });
-                        setSuccess(`${fileName} listo. Arrastra el archivo descargado al emulador o usa Ctrl+O`);
-                        
-                        // Descargar el archivo automáticamente para que el usuario pueda arrastrarlo
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = fileName;
-                        a.click();
-                    } else {
-                        setError(data.error);
-                    }
-                } catch (err) {
-                    setError(err.message);
-                }
+            // EMULADOR - Abre en nueva pestaña con ZX-Dream (soporta TAP, TZX, Z80, SNA, TRD, SCL, DSK)
+            const loadInEmulator = (filePath, fileName) => {
+                // Abrir página del emulador con el archivo
+                const encodedPath = encodeURIComponent(filePath);
+                window.open(`${API_BASE}/emulator-page?path=${encodedPath}`, '_blank');
+                setSuccess(`Abriendo ${fileName} en emulador...`);
             };
 
-            // DRAG & DROP - Simplificado y robusto
+            // DRAG & DROP
             const handleDragStart = (e, item, sourceCollection) => {
-                if (item.type !== 'file') {
-                    e.preventDefault();
-                    return;
-                }
-                
-                // Guardar datos en ref (acceso síncrono) y en dataTransfer
-                const data = { item, sourceCollection };
-                dragDataRef.current = data;
-                setIsDragging(true);
-                
+                if (item.type !== 'file') { e.preventDefault(); return; }
+                dragDataRef.current = { item, sourceCollection };
                 e.dataTransfer.effectAllowed = 'copy';
-                e.dataTransfer.setData('application/json', JSON.stringify(data));
-                
-                // Efecto visual
+                e.dataTransfer.setData('application/json', JSON.stringify({ item, sourceCollection }));
                 e.currentTarget.classList.add('dragging');
             };
 
             const handleDragEnd = (e) => {
                 e.currentTarget.classList.remove('dragging');
                 dragDataRef.current = null;
-                setIsDragging(false);
             };
 
-            const handleDragOver = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.dataTransfer.dropEffect = 'copy';
-            };
-
-            const handleDragEnter = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                e.currentTarget.classList.add('drag-over');
-            };
-
-            const handleDragLeave = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // Solo quitar clase si realmente salimos del contenedor
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX;
-                const y = e.clientY;
-                if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-                    e.currentTarget.classList.remove('drag-over');
-                }
-            };
+            const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; };
+            const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.add('drag-over'); };
+            const handleDragLeave = (e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); };
 
             const handleDrop = async (e, destCollection, destPath) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 e.currentTarget.classList.remove('drag-over');
                 
-                // Intentar obtener datos de múltiples fuentes
                 let dragData = dragDataRef.current;
-                
                 if (!dragData) {
-                    try {
-                        const jsonData = e.dataTransfer.getData('application/json');
-                        if (jsonData) {
-                            dragData = JSON.parse(jsonData);
-                        }
-                    } catch (err) {
-                        console.error('Error parsing drag data', err);
-                    }
+                    try { dragData = JSON.parse(e.dataTransfer.getData('application/json')); } catch (err) {}
                 }
-                
-                if (!dragData) {
-                    setError('No se pudo obtener información del archivo');
-                    return;
-                }
+                if (!dragData || dragData.sourceCollection === destCollection) { dragDataRef.current = null; return; }
                 
                 const { item, sourceCollection } = dragData;
-                
-                // No copiar al mismo panel
-                if (sourceCollection === destCollection) {
-                    dragDataRef.current = null;
-                    setIsDragging(false);
-                    return;
-                }
                 
                 try {
                     const response = await fetch(`${API_BASE}/copy-between`, {
@@ -306,27 +218,14 @@
                     const data = await response.json();
                     
                     if (data.success) {
-                        setCopyLog(prev => [{
-                            time: new Date().toLocaleTimeString(),
-                            file: item.name,
-                            from: sourceCollection,
-                            to: destCollection,
-                            dest: destPath.join('/') || '(raíz)'
-                        }, ...prev.slice(0, 49)]);
+                        setCopyLog(prev => [{ time: new Date().toLocaleTimeString(), file: item.name, from: sourceCollection, to: destCollection, dest: destPath.join('/') || '(raíz)' }, ...prev.slice(0, 49)]);
                         setSuccess(`✓ ${item.name} → ${destCollection}:/${destPath.join('/')}`);
-                        
-                        // Recargar panel destino
                         if (destCollection === 'FE' && fePath.length > 0) loadPanelContents('FE', fePath, setFeItems, setFeLoading);
                         if (destCollection === 'TS' && tsPath.length > 0) loadPanelContents('TS', tsPath, setTsItems, setTsLoading);
-                    } else {
-                        setError(data.error || 'Error al copiar');
-                    }
-                } catch (err) {
-                    setError(`Error: ${err.message}`);
-                }
+                    } else { setError(data.error); }
+                } catch (err) { setError(err.message); }
                 
                 dragDataRef.current = null;
-                setIsDragging(false);
             };
 
             // Navegación
@@ -340,7 +239,6 @@
             const breadcrumbTS = (i) => { if (i === -1) { setTsPath([]); setTsItems([]); } else { const np = tsPath.slice(0, i + 1); setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); } };
             const refreshTS = () => { if (tsPath.length > 0) loadPanelContents('TS', tsPath, setTsItems, setTsLoading); loadStructures(); };
 
-            // Helpers
             const getFileExt = (name) => { const i = name.lastIndexOf('.'); return i > 0 ? name.substring(i).toLowerCase() : ''; };
             const isEmulable = (name) => EMULABLE_EXT.includes(getFileExt(name));
             const isOpenable = (name) => OPENABLE_EXT.includes(getFileExt(name));
@@ -369,35 +267,98 @@
             const processFile = async () => { if (!selectedFile) return; setProcessing(true); const r = await fetch(`${API_BASE}/process-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, destinations: selectedDestinations }) }); const d = await r.json(); setProcessing(false); if (d.overall_success) { setSuccess(`Copiado a ${d.FE.success.length + d.TS.success.length} destinos`); setShowProcessModal(false); loadTempFiles(); } };
             const toggleDestination = (c, p) => { setSelectedDestinations(prev => { const l = prev[c] || []; return l.includes(p) ? { ...prev, [c]: l.filter(x => x !== p) } : { ...prev, [c]: [...l, p] }; }); };
 
+            // Compresión
+            const startCompression = async () => {
+                if (!compressDestPath) { setError('Selecciona una ruta de destino'); return; }
+                setCompressing(true);
+                try {
+                    const response = await fetch(`${API_BASE}/compress`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            collection: compressCollection,
+                            dest_path: compressDestPath,
+                            volume_size_mb: compressVolumeSize,
+                            format: compressFormat
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.success) setSuccess(`Compresión completada: ${data.volumes} volúmenes`);
+                    else setError(data.error);
+                } catch (err) { setError(err.message); }
+                finally { setCompressing(false); }
+            };
+
+            // Backup NAS
+            const loadBackupFiles = async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/backup/list-files`);
+                    const data = await response.json();
+                    setBackupFiles(data.files || []);
+                } catch (err) { setError(err.message); }
+            };
+
+            const toggleBackupFile = (name) => {
+                setSelectedBackupFiles(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+            };
+
+            const selectAllBackupFiles = () => {
+                setSelectedBackupFiles(backupFiles.map(f => f.name));
+            };
+
+            const uploadToNAS = async () => {
+                if (!ftpPassword) { setError('Introduce la contraseña FTP'); return; }
+                if (selectedBackupFiles.length === 0) { setError('Selecciona archivos para subir'); return; }
+                
+                setUploading(true);
+                setUploadProgress('Conectando al NAS...');
+                
+                try {
+                    const response = await fetch(`${API_BASE}/backup/ftp-upload`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            password: ftpPassword,
+                            files: selectedBackupFiles,
+                            remote_path: '/ZxTosec'
+                        })
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        setSuccess(data.message);
+                        setSelectedBackupFiles([]);
+                    } else {
+                        setError(data.error);
+                    }
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setUploading(false);
+                    setUploadProgress(null);
+                }
+            };
+
+            const formatSize = (bytes) => {
+                if (bytes < 1024) return bytes + ' B';
+                if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+                if (bytes < 1024*1024*1024) return (bytes/(1024*1024)).toFixed(1) + ' MB';
+                return (bytes/(1024*1024*1024)).toFixed(2) + ' GB';
+            };
+
             const filteredRules = rules.filter(r => { if (!ruleSearchFilter) return true; const s = ruleSearchFilter.toLowerCase(); return r.files.some(f => f.toLowerCase().includes(s)) || r.categories.some(c => c.toLowerCase().includes(s)); });
 
             const panelHeight = 'calc((100vh - 130px) / 3)';
 
-            // Componente FileRow - toda la fila es draggable
+            // FileRow component
             const FileRow = ({ item, collection, onFolderClick }) => {
                 const canEmulate = item.type === 'file' && isEmulable(item.name);
                 const canOpen = item.type === 'file' && isOpenable(item.name);
                 
-                const handleClick = (e) => {
-                    if (item.type === 'folder') {
-                        onFolderClick(item);
-                    }
-                };
-                
-                const handleEmulatorClick = (e) => {
-                    e.stopPropagation();
-                    loadInEmulator(item.full_path, item.name);
-                };
-                
-                const handleOpenClick = (e) => {
-                    e.stopPropagation();
-                    openFile(item.full_path);
-                };
-                
                 if (item.type === 'folder') {
                     return (
-                        <div onClick={handleClick} className="p-1.5 rounded border text-xs flex items-center gap-1.5 cursor-pointer bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50 hover:bg-gray-700/50">
-                            <Icon name="folder" className="w-3.5 h-3.5 flex-shrink-0 text-cyan-400" />
+                        <div onClick={() => onFolderClick(item)} className="p-1.5 rounded border text-xs flex items-center gap-1.5 cursor-pointer bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50">
+                            <Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" />
                             <span className="flex-1 truncate">{item.name}</span>
                             <span className="text-purple-400">{item.file_count?.toLocaleString()}</span>
                         </div>
@@ -405,51 +366,35 @@
                 }
                 
                 return (
-                    <div 
-                        draggable="true"
-                        onDragStart={(e) => handleDragStart(e, item, collection)}
-                        onDragEnd={handleDragEnd}
-                        className="file-row p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50 hover:bg-gray-700/50"
-                    >
-                        <Icon name="file" className={`w-3.5 h-3.5 flex-shrink-0 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} />
+                    <div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd}
+                        className="file-row p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50">
+                        <Icon name="file" className={`w-3.5 h-3.5 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} />
                         <span className="flex-1 truncate" title={item.name}>{item.name}</span>
-                        <span className="text-gray-500 text-xs">{(item.size/1024).toFixed(0)}K</span>
-                        {canEmulate && (
-                            <button onClick={handleEmulatorClick} className="p-1 bg-green-600 hover:bg-green-500 rounded flex-shrink-0" title="Cargar en emulador">
-                                <Icon name="play" className="w-3 h-3" />
-                            </button>
-                        )}
-                        {canOpen && (
-                            <button onClick={handleOpenClick} className="p-1 bg-orange-600 hover:bg-orange-500 rounded flex-shrink-0" title="Abrir">
-                                <Icon name="open" className="w-3 h-3" />
-                            </button>
-                        )}
+                        <span className="text-gray-500">{(item.size/1024).toFixed(0)}K</span>
+                        {canEmulate && <button onClick={(e) => { e.stopPropagation(); loadInEmulator(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Abrir en emulador"><Icon name="play" className="w-3 h-3" /></button>}
+                        {canOpen && <button onClick={(e) => { e.stopPropagation(); openFile(item.full_path); }} className="p-1 bg-orange-600 hover:bg-orange-500 rounded" title="Abrir"><Icon name="open" className="w-3 h-3" /></button>}
                     </div>
                 );
             };
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
-                    {/* HEADER */}
                     <header className="border-b border-purple-500/30 bg-black/30 px-3 py-1.5">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-gradient-to-br from-cyan-400 to-purple-500 rounded flex items-center justify-center">
-                                    <Icon name="terminal" className="w-4 h-4" />
-                                </div>
+                                <div className="w-7 h-7 bg-gradient-to-br from-cyan-400 to-purple-500 rounded flex items-center justify-center"><Icon name="terminal" className="w-4 h-4" /></div>
                                 <span className="font-bold text-sm">ZX TOSEC Organizer</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="flex gap-2 text-xs">
                                     <span className="text-gray-400">FE: <span className="text-blue-400">{feStructure?.total_files?.toLocaleString()}</span></span>
                                     <span className="text-gray-400">TS: <span className="text-cyan-400">{tsStructure?.total_files?.toLocaleString()}</span></span>
-                                    <span className="text-gray-400">TEMP: <span className="text-yellow-400">{tempFiles.length}</span></span>
                                 </div>
                                 <div className="flex gap-1">
-                                    {['explorer', 'temp', 'rules', 'log'].map(tab => (
-                                        <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp') loadTempFiles(); if (tab === 'rules') loadRules(); }}
+                                    {['explorer', 'temp', 'rules', 'log', 'compress', 'nas'].map(tab => (
+                                        <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp') loadTempFiles(); if (tab === 'rules') loadRules(); if (tab === 'nas') loadBackupFiles(); }}
                                             className={`px-2 py-1 rounded text-xs ${activeTab === tab ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                                            {tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'rules' ? 'Reglas' : `Log (${copyLog.length})`}
+                                            {tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'rules' ? 'Reglas' : tab === 'log' ? `Log (${copyLog.length})` : tab === 'compress' ? 'Comprimir' : 'Backup NAS'}
                                         </button>
                                     ))}
                                 </div>
@@ -457,76 +402,41 @@
                         </div>
                     </header>
 
-                    {/* Alertas */}
-                    {error && <div className="mx-3 mt-1 p-1.5 bg-red-500/20 border border-red-500/50 rounded text-xs flex justify-between items-center"><span>{error}</span><button onClick={() => setError(null)} className="ml-2">✕</button></div>}
-                    {success && <div className="mx-3 mt-1 p-1.5 bg-green-500/20 border border-green-500/50 rounded text-xs flex justify-between items-center"><span>{success}</span><button onClick={() => setSuccess(null)} className="ml-2">✕</button></div>}
+                    {error && <div className="mx-3 mt-1 p-1.5 bg-red-500/20 border border-red-500/50 rounded text-xs flex justify-between"><span>{error}</span><button onClick={() => setError(null)}>✕</button></div>}
+                    {success && <div className="mx-3 mt-1 p-1.5 bg-green-500/20 border border-green-500/50 rounded text-xs flex justify-between"><span>{success}</span><button onClick={() => setSuccess(null)}>✕</button></div>}
 
-                    {/* CONTENIDO */}
                     <div className="p-2" style={{height: 'calc(100vh - 50px)'}}>
                         {activeTab === 'explorer' && (
                             <div className="h-full flex gap-2">
-                                {/* PANEL IZQUIERDO */}
                                 <div className="w-96 flex flex-col gap-2">
-                                    {/* FE Menu */}
                                     <div className="bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden" style={{height: panelHeight}}>
-                                        <div className="flex items-center gap-1 mb-1">
-                                            <Icon name="folder" className="w-3 h-3 text-blue-400" />
-                                            <span className="text-xs font-bold text-blue-400">FE</span>
-                                            <span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span>
-                                        </div>
+                                        <div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div>
                                         <div className="overflow-y-auto" style={{height: 'calc(100% - 20px)'}}>
-                                            {feStructure?.folders?.map((f, i) => (
-                                                <button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}>
-                                                    <span className="truncate">{f.name}</span>
-                                                    <span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span>
-                                                </button>
-                                            ))}
+                                            {feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}
                                         </div>
                                     </div>
-                                    
-                                    {/* TS Menu */}
                                     <div className="bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden" style={{height: panelHeight}}>
-                                        <div className="flex items-center gap-1 mb-1">
-                                            <Icon name="folder" className="w-3 h-3 text-cyan-400" />
-                                            <span className="text-xs font-bold text-cyan-400">TS</span>
-                                            <span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span>
-                                        </div>
+                                        <div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div>
                                         <div className="overflow-y-auto" style={{height: 'calc(100% - 20px)'}}>
-                                            {tsStructure?.folders?.map((f, i) => (
-                                                <button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}>
-                                                    <span className="truncate">{f.name}</span>
-                                                    <span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span>
-                                                </button>
-                                            ))}
+                                            {tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}
                                         </div>
                                     </div>
-                                    
-                                    {/* Emulador */}
-                                    <div className="bg-black/40 border border-green-500/30 rounded overflow-hidden" style={{height: panelHeight}}>
+                                    <div className="bg-black/40 border border-green-500/30 rounded overflow-hidden flex flex-col" style={{height: panelHeight}}>
                                         <div className="px-2 py-1 flex items-center gap-1 border-b border-gray-700 bg-green-900/20">
-                                            <Icon name="play" className="w-3 h-3 text-green-400" />
-                                            <span className="text-xs font-bold text-green-400">Emulador Qaop</span>
-                                            <a href="https://torinak.com/qaop" target="_blank" className="ml-auto text-xs text-gray-400 hover:text-white">↗ Abrir</a>
+                                            <Icon name="play" className="w-3 h-3 text-green-400" /><span className="text-xs font-bold text-green-400">Emulador</span>
+                                            <a href="https://zx.researcher.su/en/" target="_blank" className="ml-auto text-xs text-gray-400 hover:text-white">ZX-Dream ↗</a>
                                         </div>
-                                        <iframe src="https://torinak.com/qaop#128" className="w-full border-0" style={{height: 'calc(100% - 24px)'}} allow="autoplay" title="Emulator" />
+                                        <iframe src="https://torinak.com/qaop#128" className="w-full flex-1 border-0" allow="autoplay" title="Emulator" />
                                     </div>
                                 </div>
 
-                                {/* PANEL DERECHO - Dual */}
                                 <div className="flex-1 flex bg-black/40 border border-purple-500/20 rounded overflow-hidden">
-                                    {/* FE Content */}
-                                    <div 
-                                        className="flex-1 flex flex-col border-r border-purple-500/20"
-                                        onDragOver={handleDragOver}
-                                        onDragEnter={handleDragEnter}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={(e) => handleDrop(e, 'FE', fePath)}
-                                    >
+                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}>
                                         <div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
                                             <button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400">FE</button>
-                                            {fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 hover:text-purple-300 truncate max-w-20">{s}</button></React.Fragment>))}
+                                            {fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}
                                             {feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}
-                                            <button onClick={refreshFE} className="ml-auto p-0.5 hover:bg-gray-700 rounded" title="Refrescar"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                            <button onClick={refreshFE} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1">
                                             {feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div>
@@ -534,20 +444,12 @@
                                             : <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} />)}</div>}
                                         </div>
                                     </div>
-                                    
-                                    {/* TS Content */}
-                                    <div 
-                                        className="flex-1 flex flex-col"
-                                        onDragOver={handleDragOver}
-                                        onDragEnter={handleDragEnter}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={(e) => handleDrop(e, 'TS', tsPath)}
-                                    >
+                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}>
                                         <div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
                                             <button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400">TS</button>
-                                            {tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 hover:text-purple-300 truncate max-w-20">{s}</button></React.Fragment>))}
+                                            {tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}
                                             {tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}
-                                            <button onClick={refreshTS} className="ml-auto p-0.5 hover:bg-gray-700 rounded" title="Refrescar"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                            <button onClick={refreshTS} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1">
                                             {tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div>
@@ -561,89 +463,129 @@
 
                         {activeTab === 'temp' && (
                             <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-3">
-                                    <h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2>
-                                    <button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button>
-                                </div>
-                                <div className="space-y-1">
-                                    {tempFiles.map((f, i) => (
-                                        <div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2">
-                                            <Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} />
-                                            <div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{f.file_type} • {(f.size/1024).toFixed(1)}KB</p></div>
-                                            {isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded" title="Emulador"><Icon name="play" className="w-3 h-3" /></button>}
-                                            <button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded" title="Copiar"><Icon name="copy" className="w-3 h-3" /></button>
-                                            <button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded" title="Eliminar"><Icon name="trash" className="w-3 h-3" /></button>
-                                        </div>
-                                    ))}
-                                </div>
+                                <div className="flex justify-between items-center mb-3"><h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2><button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button></div>
+                                <div className="space-y-1">{tempFiles.map((f, i) => (
+                                    <div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2">
+                                        <Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} />
+                                        <div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{f.file_type} • {(f.size/1024).toFixed(1)}KB</p></div>
+                                        {isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded"><Icon name="play" className="w-3 h-3" /></button>}
+                                        <button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded"><Icon name="copy" className="w-3 h-3" /></button>
+                                        <button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded"><Icon name="trash" className="w-3 h-3" /></button>
+                                    </div>
+                                ))}</div>
                             </div>
                         )}
 
                         {activeTab === 'rules' && (
                             <div className="h-full overflow-hidden flex flex-col bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h2 className="font-bold flex items-center gap-2"><Icon name="settings" className="w-4 h-4 text-cyan-400" />Reglas ({rules.length})</h2>
-                                    <div className="flex gap-1">
-                                        <button onClick={loadRules} className="px-2 py-1 bg-gray-700 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button>
-                                        <button onClick={addRule} className="px-2 py-1 bg-green-600 rounded text-xs flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />Nueva</button>
-                                        <button onClick={saveRules} className="px-2 py-1 bg-purple-600 rounded text-xs flex items-center gap-1"><Icon name="check" className="w-3 h-3" />Guardar</button>
-                                    </div>
-                                </div>
+                                <div className="flex justify-between items-center mb-2"><h2 className="font-bold flex items-center gap-2"><Icon name="settings" className="w-4 h-4 text-cyan-400" />Reglas ({rules.length})</h2><div className="flex gap-1"><button onClick={loadRules} className="px-2 py-1 bg-gray-700 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button><button onClick={addRule} className="px-2 py-1 bg-green-600 rounded text-xs flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />Nueva</button><button onClick={saveRules} className="px-2 py-1 bg-purple-600 rounded text-xs flex items-center gap-1"><Icon name="check" className="w-3 h-3" />Guardar</button></div></div>
                                 <input type="text" value={ruleSearchFilter} onChange={(e) => setRuleSearchFilter(e.target.value)} placeholder="Buscar..." className="w-full px-2 py-1 mb-2 bg-gray-800 border border-gray-700 rounded text-xs" />
-                                <div className="flex-1 overflow-y-auto space-y-2">
-                                    {filteredRules.map((rule, ri) => {
-                                        const ai = rules.indexOf(rule);
-                                        return (
-                                            <div key={ai} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs">
-                                                <div className="flex gap-2">
-                                                    <div className="flex-1 space-y-2">
-                                                        <div>
-                                                            <div className="flex justify-between items-center mb-1"><span className="text-yellow-400 font-semibold">📁 Archivos ({rule.files.length})</span><div className="flex gap-1"><button onClick={() => addFileToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFileBrowserForRule(ai)} className="px-1 bg-yellow-600 rounded"><Icon name="search" className="w-3 h-3" /></button></div></div>
-                                                            {rule.files.map((f, fi) => (<div key={fi} className="flex gap-1 mb-1"><input type="text" value={f} onChange={(e) => updateFileInRule(ai, fi, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" placeholder="nombre.tap" /><button onClick={() => removeFileFromRule(ai, fi)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}
-                                                        </div>
-                                                        <div>
-                                                            <div className="flex justify-between items-center mb-1"><span className="text-cyan-400 font-semibold">📂 Destinos ({rule.categories.length})</span><div className="flex gap-1"><button onClick={() => addCategoryToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFolderBrowser(ai)} className="px-1 bg-cyan-600 rounded"><Icon name="folder" className="w-3 h-3" /></button></div></div>
-                                                            {rule.categories.map((c, ci) => (<div key={ci} className="flex gap-1 mb-1 items-center"><span className={`px-1.5 py-0.5 rounded font-bold ${c.startsWith('FE:') ? 'bg-blue-600' : c.startsWith('TS:') ? 'bg-cyan-600' : 'bg-gray-600'}`}>{c.startsWith('FE:') ? 'FE' : c.startsWith('TS:') ? 'TS' : '??'}</span><input type="text" value={c} onChange={(e) => updateCategoryInRule(ai, ci, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" placeholder="FE:04 SELECCIONES/..." /><button onClick={() => removeCategoryFromRule(ai, ci)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}
-                                                        </div>
-                                                    </div>
-                                                    <button onClick={() => deleteRule(ai)} className="px-2 py-1 bg-red-600 rounded h-fit"><Icon name="trash" className="w-3 h-3" /></button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                <div className="flex-1 overflow-y-auto space-y-2">{filteredRules.map((rule, ri) => { const ai = rules.indexOf(rule); return (<div key={ai} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs"><div className="flex gap-2"><div className="flex-1 space-y-2"><div><div className="flex justify-between items-center mb-1"><span className="text-yellow-400 font-semibold">📁 Archivos ({rule.files.length})</span><div className="flex gap-1"><button onClick={() => addFileToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFileBrowserForRule(ai)} className="px-1 bg-yellow-600 rounded"><Icon name="search" className="w-3 h-3" /></button></div></div>{rule.files.map((f, fi) => (<div key={fi} className="flex gap-1 mb-1"><input type="text" value={f} onChange={(e) => updateFileInRule(ai, fi, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" placeholder="nombre.tap" /><button onClick={() => removeFileFromRule(ai, fi)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}</div><div><div className="flex justify-between items-center mb-1"><span className="text-cyan-400 font-semibold">📂 Destinos ({rule.categories.length})</span><div className="flex gap-1"><button onClick={() => addCategoryToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFolderBrowser(ai)} className="px-1 bg-cyan-600 rounded"><Icon name="folder" className="w-3 h-3" /></button></div></div>{rule.categories.map((c, ci) => (<div key={ci} className="flex gap-1 mb-1 items-center"><span className={`px-1.5 py-0.5 rounded font-bold ${c.startsWith('FE:') ? 'bg-blue-600' : c.startsWith('TS:') ? 'bg-cyan-600' : 'bg-gray-600'}`}>{c.startsWith('FE:') ? 'FE' : c.startsWith('TS:') ? 'TS' : '??'}</span><input type="text" value={c} onChange={(e) => updateCategoryInRule(ai, ci, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" /><button onClick={() => removeCategoryFromRule(ai, ci)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}</div></div><button onClick={() => deleteRule(ai)} className="px-2 py-1 bg-red-600 rounded h-fit"><Icon name="trash" className="w-3 h-3" /></button></div></div>); })}</div>
                             </div>
                         )}
 
                         {activeTab === 'log' && (
                             <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-3">
-                                    <h2 className="font-bold">📋 Log de copias ({copyLog.length})</h2>
-                                    <button onClick={() => setCopyLog([])} className="px-2 py-1 bg-red-600 rounded text-xs">Limpiar</button>
+                                <div className="flex justify-between items-center mb-3"><h2 className="font-bold">📋 Log de copias ({copyLog.length})</h2><button onClick={() => setCopyLog([])} className="px-2 py-1 bg-red-600 rounded text-xs">Limpiar</button></div>
+                                {copyLog.length === 0 ? <div className="text-center text-gray-500 py-8">Arrastra archivos entre FE y TS</div>
+                                : <div className="space-y-1">{copyLog.map((l, i) => (<div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-3"><span className="text-gray-500">{l.time}</span><span className={`px-1.5 py-0.5 rounded font-bold ${l.from === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.from}</span><span className="text-gray-400">→</span><span className={`px-1.5 py-0.5 rounded font-bold ${l.to === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.to}</span><span className="text-green-400 flex-1 truncate">{l.file}</span><span className="text-gray-400 truncate max-w-xs">/{l.dest}</span></div>))}</div>}
+                            </div>
+                        )}
+
+                        {activeTab === 'compress' && (
+                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
+                                <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="archive" className="w-5 h-5 text-orange-400" />Comprimir TOSEC por Volúmenes</h2>
+                                <div className="space-y-4 max-w-xl">
+                                    <div><label className="block text-sm font-medium mb-1">Colección</label><div className="flex gap-2"><button onClick={() => setCompressCollection('FE')} className={`px-4 py-2 rounded ${compressCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE ({feStructure?.total_files?.toLocaleString()})</button><button onClick={() => setCompressCollection('TS')} className={`px-4 py-2 rounded ${compressCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS ({tsStructure?.total_files?.toLocaleString()})</button></div></div>
+                                    <div><label className="block text-sm font-medium mb-1">Ruta destino</label><input type="text" value={compressDestPath} onChange={(e) => setCompressDestPath(e.target.value)} className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm" /></div>
+                                    <div><label className="block text-sm font-medium mb-1">Tamaño volumen (MB)</label><div className="flex gap-2 items-center"><input type="number" value={compressVolumeSize} onChange={(e) => setCompressVolumeSize(parseInt(e.target.value) || 0)} className="w-32 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm" /><div className="flex gap-1"><button onClick={() => setCompressVolumeSize(700)} className="px-2 py-1 bg-gray-700 rounded text-xs">CD</button><button onClick={() => setCompressVolumeSize(4700)} className="px-2 py-1 bg-gray-700 rounded text-xs">DVD</button><button onClick={() => setCompressVolumeSize(8500)} className="px-2 py-1 bg-gray-700 rounded text-xs">DVD DL</button><button onClick={() => setCompressVolumeSize(25000)} className="px-2 py-1 bg-gray-700 rounded text-xs">BD</button></div></div></div>
+                                    <div><label className="block text-sm font-medium mb-1">Formato</label><div className="flex gap-2"><button onClick={() => setCompressFormat('zip')} className={`px-3 py-1 rounded ${compressFormat === 'zip' ? 'bg-purple-600' : 'bg-gray-700'}`}>ZIP</button><button onClick={() => setCompressFormat('7z')} className={`px-3 py-1 rounded ${compressFormat === '7z' ? 'bg-purple-600' : 'bg-gray-700'}`}>7Z</button><button onClick={() => setCompressFormat('rar')} className={`px-3 py-1 rounded ${compressFormat === 'rar' ? 'bg-purple-600' : 'bg-gray-700'}`}>RAR</button></div></div>
+                                    <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Iniciar Compresión'}</button>
                                 </div>
-                                {copyLog.length === 0 ? <div className="text-center text-gray-500 py-8">Arrastra archivos entre FE y TS para copiarlos</div>
-                                : <div className="space-y-1">{copyLog.map((l, i) => (
-                                    <div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-3">
-                                        <span className="text-gray-500">{l.time}</span>
-                                        <span className={`px-1.5 py-0.5 rounded font-bold ${l.from === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.from}</span>
-                                        <span className="text-gray-400">→</span>
-                                        <span className={`px-1.5 py-0.5 rounded font-bold ${l.to === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.to}</span>
-                                        <span className="text-green-400 flex-1 truncate">{l.file}</span>
-                                        <span className="text-gray-400 truncate max-w-xs">/{l.dest}</span>
+                            </div>
+                        )}
+
+                        {activeTab === 'nas' && (
+                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
+                                <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup a NAS</h2>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    {/* Panel izquierdo - Archivos */}
+                                    <div className="bg-gray-800/50 border border-gray-700 rounded p-3">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <h3 className="font-semibold text-sm">Archivos en C:\ZX\Backups\</h3>
+                                            <div className="flex gap-1">
+                                                <button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button>
+                                                <button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button>
+                                            </div>
+                                        </div>
+                                        <div className="max-h-80 overflow-y-auto space-y-1">
+                                            {backupFiles.length === 0 ? (
+                                                <p className="text-gray-500 text-sm text-center py-4">No hay archivos de backup</p>
+                                            ) : backupFiles.map((f, i) => (
+                                                <label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50">
+                                                    <input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} />
+                                                    <Icon name="archive" className="w-4 h-4 text-orange-400" />
+                                                    <span className="flex-1 truncate text-sm">{f.name}</span>
+                                                    <span className="text-xs text-gray-400">{formatSize(f.size)}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {selectedBackupFiles.length > 0 && (
+                                            <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} archivos seleccionados</p>
+                                        )}
                                     </div>
-                                ))}</div>}
+                                    
+                                    {/* Panel derecho - Conexión FTP */}
+                                    <div className="bg-gray-800/50 border border-gray-700 rounded p-3">
+                                        <h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3>
+                                        
+                                        <div className="space-y-3">
+                                            <div className="p-2 bg-gray-900/50 rounded">
+                                                <p className="text-xs text-gray-400">Servidor</p>
+                                                <p className="text-sm text-cyan-400">revisteo.synology.me</p>
+                                            </div>
+                                            <div className="p-2 bg-gray-900/50 rounded">
+                                                <p className="text-xs text-gray-400">Usuario</p>
+                                                <p className="text-sm text-green-400">Flunky</p>
+                                            </div>
+                                            <div className="p-2 bg-gray-900/50 rounded">
+                                                <p className="text-xs text-gray-400">Protocolo</p>
+                                                <p className="text-sm text-purple-400">FTP sobre TLS</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-1"><Icon name="lock" className="w-3 h-3 inline mr-1" />Contraseña</label>
+                                                <input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm" />
+                                            </div>
+                                            <div className="p-2 bg-gray-900/50 rounded">
+                                                <p className="text-xs text-gray-400">Carpeta remota</p>
+                                                <p className="text-sm text-yellow-400">/ZxTosec</p>
+                                            </div>
+                                            
+                                            {uploadProgress && (
+                                                <div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded">
+                                                    <p className="text-sm text-blue-300">{uploadProgress}</p>
+                                                </div>
+                                            )}
+                                            
+                                            <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0}
+                                                className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
+                                                {uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}
+                                                {uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
 
-                    {/* MODALES */}
+                    {/* Modales */}
                     {showProcessModal && selectedFile && (
                         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
                             <div className="bg-gray-900 border border-purple-500/30 rounded max-w-2xl w-full max-h-[70vh] flex flex-col">
                                 <div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate max-w-md">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}><Icon name="x" className="w-4 h-4" /></button></div>
-                                <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                                    {['FE', 'TS'].map(col => (<div key={col} className="border border-gray-700 rounded p-2"><h4 className={`font-semibold text-xs mb-1 ${col === 'FE' ? 'text-blue-400' : 'text-cyan-400'}`}>{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} className="mt-0.5" /><span className="break-all">{p}</span></label>))}</div></div>))}
-                                </div>
+                                <div className="flex-1 overflow-y-auto p-3 space-y-3">{['FE', 'TS'].map(col => (<div key={col} className="border border-gray-700 rounded p-2"><h4 className={`font-semibold text-xs mb-1 ${col === 'FE' ? 'text-blue-400' : 'text-cyan-400'}`}>{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} className="mt-0.5" /><span className="break-all">{p}</span></label>))}</div></div>))}</div>
                                 <div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div>
                             </div>
                         </div>
