@@ -1,21 +1,41 @@
 ﻿<!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZX Spectrum TOSEC Organizer</title>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin
+        src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; font-family: system-ui, sans-serif; }
-        .drag-over { background: rgba(34, 197, 94, 0.3) !important; border: 2px dashed #22c55e !important; }
-        .file-row { cursor: grab; user-select: none; }
-        .file-row:active { cursor: grabbing; }
-        .file-row.dragging { opacity: 0.4; background: rgba(139, 92, 246, 0.3) !important; }
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+        }
+
+        .drag-over {
+            background: rgba(34, 197, 94, 0.3) !important;
+            border: 2px dashed #22c55e !important;
+        }
+
+        .file-row {
+            cursor: grab;
+            user-select: none;
+        }
+
+        .file-row:active {
+            cursor: grabbing;
+        }
+
+        .file-row.dragging {
+            opacity: 0.4;
+        }
     </style>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="text/babel">
@@ -45,7 +65,8 @@
                 archive: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>,
                 upload: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>,
                 server: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>,
-                lock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                lock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
+                wifi: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>
             };
             return icons[name] || icons.folder;
         };
@@ -54,64 +75,78 @@
             const [activeTab, setActiveTab] = useState('explorer');
             const [feStructure, setFeStructure] = useState(null);
             const [tsStructure, setTsStructure] = useState(null);
-            
             const [fePath, setFePath] = useState([]);
             const [feItems, setFeItems] = useState([]);
             const [feLoading, setFeLoading] = useState(false);
-            
             const [tsPath, setTsPath] = useState([]);
             const [tsItems, setTsItems] = useState([]);
             const [tsLoading, setTsLoading] = useState(false);
-            
             const [tempFiles, setTempFiles] = useState([]);
             const [rules, setRules] = useState([]);
             const [error, setError] = useState(null);
             const [success, setSuccess] = useState(null);
             const [copyLog, setCopyLog] = useState([]);
-            
             const dragDataRef = useRef(null);
-            
             const [showProcessModal, setShowProcessModal] = useState(false);
             const [selectedFile, setSelectedFile] = useState(null);
             const [selectedDestinations, setSelectedDestinations] = useState({ FE: [], TS: [] });
             const [processing, setProcessing] = useState(false);
-            
             const [showFolderBrowser, setShowFolderBrowser] = useState(false);
             const [browserPath, setBrowserPath] = useState([]);
             const [browserFolders, setBrowserFolders] = useState([]);
             const [browserCollection, setBrowserCollection] = useState('FE');
             const [currentRuleIndex, setCurrentRuleIndex] = useState(null);
-            
             const [showFileBrowser, setShowFileBrowser] = useState(false);
             const [fileBrowserCollection, setFileBrowserCollection] = useState('TEMP');
             const [fileBrowserPath, setFileBrowserPath] = useState([]);
             const [fileBrowserItems, setFileBrowserItems] = useState([]);
             const [fileSearchFilter, setFileSearchFilter] = useState('');
-            
             const [ruleSearchFilter, setRuleSearchFilter] = useState('');
-            
+
             // Compresión
             const [compressCollection, setCompressCollection] = useState('FE');
             const [compressDestPath, setCompressDestPath] = useState('C:\\ZX\\Backups');
             const [compressVolumeSize, setCompressVolumeSize] = useState(4700);
             const [compressFormat, setCompressFormat] = useState('zip');
             const [compressing, setCompressing] = useState(false);
-            
+            const [compressProgress, setCompressProgress] = useState(null);
+
             // Backup NAS
             const [backupFiles, setBackupFiles] = useState([]);
             const [selectedBackupFiles, setSelectedBackupFiles] = useState([]);
             const [ftpPassword, setFtpPassword] = useState('');
             const [uploading, setUploading] = useState(false);
-            const [uploadProgress, setUploadProgress] = useState(null);
+            const [uploadProgress, setUploadProgress] = useState([]);
+            const [connectionStatus, setConnectionStatus] = useState(null);
+            const [currentUploadFile, setCurrentUploadFile] = useState(null);
+            const [selectedFilesFE, setSelectedFilesFE] = useState([]);
+            const [selectedFilesTS, setSelectedFilesTS] = useState([]);
 
             useEffect(() => { loadStructures(); }, []);
 
+            // Polling del progreso de compresión
+            useEffect(() => {
+                let interval;
+                if (compressing) {
+                    interval = setInterval(async () => {
+                        try {
+                            const r = await fetch(`${API_BASE}/compress/status`);
+                            const d = await r.json();
+                            setCompressProgress(d);
+                            if (d.done || d.error || !d.running) {
+                                setCompressing(false);
+                                if (d.done) setSuccess(d.progress);
+                                if (d.error) setError(d.error);
+                            }
+                        } catch (e) { console.error('Error polling compress status:', e); }
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [compressing]);
+
             const loadStructures = async () => {
                 try {
-                    const [feRes, tsRes] = await Promise.all([
-                        fetch(`${API_BASE}/scan/FE`),
-                        fetch(`${API_BASE}/scan/TS`)
-                    ]);
+                    const [feRes, tsRes] = await Promise.all([fetch(`${API_BASE}/scan/FE`), fetch(`${API_BASE}/scan/TS`)]);
                     setFeStructure(await feRes.json());
                     setTsStructure(await tsRes.json());
                 } catch (err) { setError('Error cargando estructuras'); }
@@ -123,108 +158,43 @@
                     const pathStr = pathArray.join('/');
                     const response = await fetch(`${API_BASE}/browse/${collection}/${encodeURIComponent(pathStr)}`);
                     const data = await response.json();
-                    setItems(data.error ? [] : (data.items || []));
-                } catch (err) { setError(err.message); } 
+                    setItems(data.items || []);
+                } catch (err) { setError(err.message); }
                 finally { setLoading(false); }
             };
 
-            const loadTempFiles = async () => {
-                try {
-                    const response = await fetch(`${API_BASE}/temp/scan`);
-                    const data = await response.json();
-                    setTempFiles(data.files || []);
-                } catch (err) { setError(err.message); }
-            };
+            const loadTempFiles = async () => { try { const r = await fetch(`${API_BASE}/temp/scan`); const d = await r.json(); setTempFiles(d.files || []); } catch (err) { setError(err.message); } };
+            const loadRules = async () => { try { const r = await fetch(`${API_BASE}/rules/load`); const d = await r.json(); setRules(d.rules || []); } catch (err) { setError(err.message); } };
+            const saveRules = async () => { try { const r = await fetch(`${API_BASE}/rules/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) }); const d = await r.json(); if (d.success) setSuccess('Reglas guardadas'); } catch (err) { setError(err.message); } };
+            const executeRules = async () => { setProcessing(true); try { const r = await fetch(`${API_BASE}/rules/execute`, { method: 'POST' }); const d = await r.json(); if (d.success) { setSuccess(d.message); loadTempFiles(); } else { setError(d.error || d.message); } } catch (err) { setError(err.message); } finally { setProcessing(false); } };
+            const openFile = async (filePath) => { try { await fetch(`${API_BASE}/open-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: filePath }) }); } catch (err) { setError(err.message); } };
 
-            const loadRules = async () => {
-                try {
-                    const response = await fetch(`${API_BASE}/rules/load`);
-                    const data = await response.json();
-                    setRules(data.rules || []);
-                } catch (err) { setError(err.message); }
-            };
-
-            const saveRules = async () => {
-                try {
-                    const response = await fetch(`${API_BASE}/rules/save`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ rules })
-                    });
-                    const data = await response.json();
-                    if (data.success) setSuccess('Reglas guardadas');
-                    else setError(data.error);
-                } catch (err) { setError(err.message); }
-            };
-
-            const openFile = async (filePath) => {
-                try {
-                    await fetch(`${API_BASE}/open-file`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: filePath })
-                    });
-                } catch (err) { setError(err.message); }
-            };
-
-            // EMULADOR - Abre en nueva pestaña con ZX-Dream (soporta TAP, TZX, Z80, SNA, TRD, SCL, DSK)
+            // EMULADOR - Abre en nueva ventana
             const loadInEmulator = (filePath, fileName) => {
-                // Abrir página del emulador con el archivo
-                const encodedPath = encodeURIComponent(filePath);
-                window.open(`${API_BASE}/emulator-page?path=${encodedPath}`, '_blank');
-                setSuccess(`Abriendo ${fileName} en emulador...`);
+                window.open(`${API_BASE}/emulator?path=${encodeURIComponent(filePath)}`, '_blank', 'width=1200,height=800');
             };
 
             // DRAG & DROP
-            const handleDragStart = (e, item, sourceCollection) => {
-                if (item.type !== 'file') { e.preventDefault(); return; }
-                dragDataRef.current = { item, sourceCollection };
-                e.dataTransfer.effectAllowed = 'copy';
-                e.dataTransfer.setData('application/json', JSON.stringify({ item, sourceCollection }));
-                e.currentTarget.classList.add('dragging');
-            };
-
-            const handleDragEnd = (e) => {
-                e.currentTarget.classList.remove('dragging');
-                dragDataRef.current = null;
-            };
-
-            const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; };
-            const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.add('drag-over'); };
-            const handleDragLeave = (e) => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); };
-
+            const handleDragStart = (e, item, sourceCollection) => { if (item.type !== 'file') { e.preventDefault(); return; } dragDataRef.current = { item, sourceCollection }; e.dataTransfer.effectAllowed = 'copy'; e.currentTarget.classList.add('dragging'); };
+            const handleDragEnd = (e) => { e.currentTarget.classList.remove('dragging'); dragDataRef.current = null; };
+            const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
+            const handleDragEnter = (e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); };
+            const handleDragLeave = (e) => { e.currentTarget.classList.remove('drag-over'); };
             const handleDrop = async (e, destCollection, destPath) => {
-                e.preventDefault(); e.stopPropagation();
-                e.currentTarget.classList.remove('drag-over');
-                
-                let dragData = dragDataRef.current;
-                if (!dragData) {
-                    try { dragData = JSON.parse(e.dataTransfer.getData('application/json')); } catch (err) {}
-                }
+                e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+                const dragData = dragDataRef.current;
                 if (!dragData || dragData.sourceCollection === destCollection) { dragDataRef.current = null; return; }
-                
                 const { item, sourceCollection } = dragData;
-                
                 try {
-                    const response = await fetch(`${API_BASE}/copy-between`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            source_path: item.full_path,
-                            dest_collection: destCollection,
-                            dest_folder: destPath.join('/')
-                        })
-                    });
-                    const data = await response.json();
-                    
-                    if (data.success) {
+                    const r = await fetch(`${API_BASE}/copy-between`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_path: item.full_path, dest_collection: destCollection, dest_folder: destPath.join('/') }) });
+                    const d = await r.json();
+                    if (d.success) {
                         setCopyLog(prev => [{ time: new Date().toLocaleTimeString(), file: item.name, from: sourceCollection, to: destCollection, dest: destPath.join('/') || '(raíz)' }, ...prev.slice(0, 49)]);
-                        setSuccess(`✓ ${item.name} → ${destCollection}:/${destPath.join('/')}`);
+                        setSuccess(`✓ ${item.name} → ${destCollection}`);
                         if (destCollection === 'FE' && fePath.length > 0) loadPanelContents('FE', fePath, setFeItems, setFeLoading);
                         if (destCollection === 'TS' && tsPath.length > 0) loadPanelContents('TS', tsPath, setTsItems, setTsLoading);
-                    } else { setError(data.error); }
+                    }
                 } catch (err) { setError(err.message); }
-                
                 dragDataRef.current = null;
             };
 
@@ -233,7 +203,6 @@
             const clickRootFE = (f) => { setFePath([f.name]); loadPanelContents('FE', [f.name], setFeItems, setFeLoading); };
             const breadcrumbFE = (i) => { if (i === -1) { setFePath([]); setFeItems([]); } else { const np = fePath.slice(0, i + 1); setFePath(np); loadPanelContents('FE', np, setFeItems, setFeLoading); } };
             const refreshFE = () => { if (fePath.length > 0) loadPanelContents('FE', fePath, setFeItems, setFeLoading); loadStructures(); };
-
             const clickFolderTS = (f) => { const np = [...tsPath, f.name]; setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); };
             const clickRootTS = (f) => { setTsPath([f.name]); loadPanelContents('TS', [f.name], setTsItems, setTsLoading); };
             const breadcrumbTS = (i) => { if (i === -1) { setTsPath([]); setTsItems([]); } else { const np = tsPath.slice(0, i + 1); setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); } };
@@ -242,9 +211,10 @@
             const getFileExt = (name) => { const i = name.lastIndexOf('.'); return i > 0 ? name.substring(i).toLowerCase() : ''; };
             const isEmulable = (name) => EMULABLE_EXT.includes(getFileExt(name));
             const isOpenable = (name) => OPENABLE_EXT.includes(getFileExt(name));
+            const formatSize = (bytes) => { if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'; if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'; return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'; };
 
             // Reglas
-            const deleteRule = (i) => { if (confirm('¿Eliminar?')) { setRules(rules.filter((_, idx) => idx !== i)); } };
+            const deleteRule = (i) => { if (confirm('¿Eliminar?')) setRules(rules.filter((_, idx) => idx !== i)); };
             const addRule = () => setRules([...rules, { files: [], categories: [] }]);
             const addFileToRule = (ri) => { const nr = [...rules]; nr[ri].files.push(''); setRules(nr); };
             const updateFileInRule = (ri, fi, v) => { const nr = [...rules]; nr[ri].files[fi] = v; setRules(nr); };
@@ -252,152 +222,190 @@
             const addCategoryToRule = (ri) => { const nr = [...rules]; nr[ri].categories.push(''); setRules(nr); };
             const updateCategoryInRule = (ri, ci, v) => { const nr = [...rules]; nr[ri].categories[ci] = v; setRules(nr); };
             const removeCategoryFromRule = (ri, ci) => { const nr = [...rules]; nr[ri].categories.splice(ci, 1); setRules(nr); };
-
             const openFolderBrowser = (ri) => { setCurrentRuleIndex(ri); setBrowserPath([]); setBrowserCollection('FE'); loadBrowserFolders('FE', ''); setShowFolderBrowser(true); };
             const loadBrowserFolders = async (c, p) => { const url = p ? `${API_BASE}/browse-folders/${c}/${encodeURIComponent(p)}` : `${API_BASE}/browse-folders/${c}`; const r = await fetch(url); const d = await r.json(); setBrowserFolders(d.folders || []); };
-            const selectFolderForRule = () => { if (currentRuleIndex === null) return; const fp = `${browserCollection}:${browserPath.join('/')}`; const nr = [...rules]; if (!nr[currentRuleIndex].categories.includes(fp)) { nr[currentRuleIndex].categories.push(fp); setRules(nr); } setShowFolderBrowser(false); };
+            const loadFileBrowserContents = async (c, p) => {
+                console.log('[DEBUG] loadFileBrowserContents called:', { collection: c, path: p });
+                if (c === 'TEMP') {
+                    const r = await fetch(`${API_BASE}/temp/scan`);
+                    const d = await r.json();
+                    console.log('[DEBUG] TEMP response:', d);
+                    setFileBrowserItems((d.files || []).map(f => ({ ...f, type: 'file' })));
+                } else {
+                    // For FE/TS, we want to show files, not folders
+                    // Use /api/browse/<collection>/<path> which returns both files and folders
+                    const ps = (p || []).join('/');
+                    const url = ps ? `${API_BASE}/browse/${c}/${encodeURIComponent(ps)}` : `${API_BASE}/scan/${c}`;
+                    console.log('[DEBUG] FE/TS URL:', url);
+                    const r = await fetch(url);
+                    const d = await r.json();
+                    console.log('[DEBUG] FE/TS response:', d);
+                    // Show both folders and files, but mark them appropriately
+                    const items = d.items || [];
+                    console.log('[DEBUG] Items to display:', items);
+                    setFileBrowserItems(items);
+                }
+            };
 
-            const openFileBrowserForRule = (ri) => { setCurrentRuleIndex(ri); setFileBrowserCollection('TEMP'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('TEMP', []); setShowFileBrowser(true); };
-            const loadFileBrowserContents = async (c, p) => { if (c === 'TEMP') { const r = await fetch(`${API_BASE}/temp/scan`); const d = await r.json(); setFileBrowserItems((d.files || []).map(f => ({ ...f, type: 'file' }))); } else { const ps = p.join('/'); const url = ps ? `${API_BASE}/browse/${c}/${encodeURIComponent(ps)}` : `${API_BASE}/scan/${c}`; const r = await fetch(url); const d = await r.json(); setFileBrowserItems(d.folders ? d.folders.map(f => ({ ...f, type: 'folder' })) : d.items || []); } };
-            const selectFileForRule = (f) => { if (currentRuleIndex === null) return; const nr = [...rules]; if (!nr[currentRuleIndex].files.includes(f.name)) { nr[currentRuleIndex].files.push(f.name); setRules(nr); } setShowFileBrowser(false); };
 
             // TEMP
             const deleteTempFile = async (fn) => { if (!confirm(`¿Eliminar ${fn}?`)) return; await fetch(`${API_BASE}/temp/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: fn }) }); loadTempFiles(); };
             const openProcessModal = (f) => { setSelectedFile(f); setSelectedDestinations({ FE: f.suggested_paths?.FE || [], TS: f.suggested_paths?.TS || [] }); setShowProcessModal(true); };
-            const processFile = async () => { if (!selectedFile) return; setProcessing(true); const r = await fetch(`${API_BASE}/process-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, destinations: selectedDestinations }) }); const d = await r.json(); setProcessing(false); if (d.overall_success) { setSuccess(`Copiado a ${d.FE.success.length + d.TS.success.length} destinos`); setShowProcessModal(false); loadTempFiles(); } };
+            const processFile = async () => { if (!selectedFile) return; setProcessing(true); const r = await fetch(`${API_BASE}/process-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, destinations: selectedDestinations }) }); const d = await r.json(); setProcessing(false); if (d.overall_success) { setSuccess('Copiado'); setShowProcessModal(false); loadTempFiles(); } };
             const toggleDestination = (c, p) => { setSelectedDestinations(prev => { const l = prev[c] || []; return l.includes(p) ? { ...prev, [c]: l.filter(x => x !== p) } : { ...prev, [c]: [...l, p] }; }); };
 
             // Compresión
-            const startCompression = async () => {
-                if (!compressDestPath) { setError('Selecciona una ruta de destino'); return; }
-                setCompressing(true);
-                try {
-                    const response = await fetch(`${API_BASE}/compress`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            collection: compressCollection,
-                            dest_path: compressDestPath,
-                            volume_size_mb: compressVolumeSize,
-                            format: compressFormat
-                        })
-                    });
-                    const data = await response.json();
-                    if (data.success) setSuccess(`Compresión completada: ${data.volumes} volúmenes`);
-                    else setError(data.error);
-                } catch (err) { setError(err.message); }
-                finally { setCompressing(false); }
+            const startCompression = async () => { 
+                if (!compressDestPath) { setError('Falta ruta'); return; } 
+                setCompressing(true); 
+                setCompressProgress({ progress: 'Iniciando...', percent: 0 }); 
+                try { 
+                    const r = await fetch(`${API_BASE}/compress/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection: compressCollection, dest_path: compressDestPath, volume_size_mb: compressVolumeSize, format: compressFormat }) }); 
+                    const d = await r.json(); 
+                    if (!d.success) { setError(d.error); setCompressing(false); } 
+                } catch (err) { setError(err.message); setCompressing(false); } 
             };
 
             // Backup NAS
-            const loadBackupFiles = async () => {
+            const loadBackupFiles = async () => { try { const r = await fetch(`${API_BASE}/backup/list-files`); const d = await r.json(); setBackupFiles(d.files || []); } catch (err) { setError(err.message); } };
+            const toggleBackupFile = (name) => setSelectedBackupFiles(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+            const selectAllBackupFiles = () => setSelectedBackupFiles(backupFiles.map(f => f.name));
+            const deselectAllBackupFiles = () => setSelectedBackupFiles([]);
+
+            // Probar conexión FTP
+            const testFtpConnection = async () => {
+                if (!ftpPassword) { setError('Introduce la contraseña'); return; }
+                setConnectionStatus({ status: 'testing', message: 'Probando conexión...' });
                 try {
-                    const response = await fetch(`${API_BASE}/backup/list-files`);
-                    const data = await response.json();
-                    setBackupFiles(data.files || []);
-                } catch (err) { setError(err.message); }
-            };
-
-            const toggleBackupFile = (name) => {
-                setSelectedBackupFiles(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
-            };
-
-            const selectAllBackupFiles = () => {
-                setSelectedBackupFiles(backupFiles.map(f => f.name));
-            };
-
-            const uploadToNAS = async () => {
-                if (!ftpPassword) { setError('Introduce la contraseña FTP'); return; }
-                if (selectedBackupFiles.length === 0) { setError('Selecciona archivos para subir'); return; }
-                
-                setUploading(true);
-                setUploadProgress('Conectando al NAS...');
-                
-                try {
-                    const response = await fetch(`${API_BASE}/backup/ftp-upload`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            password: ftpPassword,
-                            files: selectedBackupFiles,
-                            remote_path: '/ZxTosec'
-                        })
-                    });
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        setSuccess(data.message);
-                        setSelectedBackupFiles([]);
+                    const r = await fetch(`${API_BASE}/backup/ftp-test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: ftpPassword }) });
+                    const d = await r.json();
+                    if (d.success) {
+                        setConnectionStatus({ status: 'ok', message: `✓ Conectado. Carpeta /ZxTosec: ${d.folder_exists ? 'existe' : 'no existe'}. ${d.remote_files?.length || 0} archivos remotos.` });
                     } else {
-                        setError(data.error);
+                        setConnectionStatus({ status: 'error', message: d.error });
                     }
                 } catch (err) {
-                    setError(err.message);
-                } finally {
-                    setUploading(false);
-                    setUploadProgress(null);
+                    setConnectionStatus({ status: 'error', message: err.message });
                 }
             };
 
-            const formatSize = (bytes) => {
-                if (bytes < 1024) return bytes + ' B';
-                if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
-                if (bytes < 1024*1024*1024) return (bytes/(1024*1024)).toFixed(1) + ' MB';
-                return (bytes/(1024*1024*1024)).toFixed(2) + ' GB';
+            // Subir archivos uno por uno con progreso
+            const uploadToNAS = async () => {
+                if (!ftpPassword) { setError('Introduce la contraseña'); return; }
+                if (selectedBackupFiles.length === 0) { setError('Selecciona archivos'); return; }
+
+                setUploading(true);
+                setUploadProgress([]);
+
+                for (let i = 0; i < selectedBackupFiles.length; i++) {
+                    const filename = selectedBackupFiles[i];
+                    const fileInfo = backupFiles.find(f => f.name === filename);
+
+                    setCurrentUploadFile({ name: filename, index: i + 1, total: selectedBackupFiles.length, size: fileInfo?.size || 0 });
+
+                    try {
+                        const r = await fetch(`${API_BASE}/backup/ftp-upload-single`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: ftpPassword, filename })
+                        });
+                        const d = await r.json();
+
+                        setUploadProgress(prev => [...prev, {
+                            filename,
+                            success: d.success,
+                            error: d.error,
+                            size: d.size,
+                            speed: d.speed_mbps,
+                            elapsed: d.elapsed_seconds,
+                            verified: d.verified
+                        }]);
+                    } catch (err) {
+                        setUploadProgress(prev => [...prev, { filename, success: false, error: err.message }]);
+                    }
+                }
+
+                setCurrentUploadFile(null);
+                setUploading(false);
+                setSelectedBackupFiles([]);
+
+                const successCount = uploadProgress.filter(p => p.success).length;
+                setSuccess(`Subida completada: ${successCount}/${selectedBackupFiles.length} archivos`);
             };
 
             const filteredRules = rules.filter(r => { if (!ruleSearchFilter) return true; const s = ruleSearchFilter.toLowerCase(); return r.files.some(f => f.toLowerCase().includes(s)) || r.categories.some(c => c.toLowerCase().includes(s)); });
-
             const panelHeight = 'calc((100vh - 130px) / 3)';
 
-            // FileRow component
             const FileRow = ({ item, collection, onFolderClick }) => {
                 const canEmulate = item.type === 'file' && isEmulable(item.name);
                 const canOpen = item.type === 'file' && isOpenable(item.name);
-                
                 if (item.type === 'folder') {
-                    return (
-                        <div onClick={() => onFolderClick(item)} className="p-1.5 rounded border text-xs flex items-center gap-1.5 cursor-pointer bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50">
-                            <Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" />
-                            <span className="flex-1 truncate">{item.name}</span>
-                            <span className="text-purple-400">{item.file_count?.toLocaleString()}</span>
-                        </div>
-                    );
+                    return (<div onClick={() => onFolderClick(item)} className="p-1.5 rounded border text-xs flex items-center gap-1.5 cursor-pointer bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50"><Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" /><span className="flex-1 truncate">{item.name}</span><span className="text-purple-400">{item.file_count?.toLocaleString()}</span></div>);
                 }
-                
-                return (
-                    <div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd}
-                        className="file-row p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50">
-                        <Icon name="file" className={`w-3.5 h-3.5 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} />
-                        <span className="flex-1 truncate" title={item.name}>{item.name}</span>
-                        <span className="text-gray-500">{(item.size/1024).toFixed(0)}K</span>
-                        {canEmulate && <button onClick={(e) => { e.stopPropagation(); loadInEmulator(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Abrir en emulador"><Icon name="play" className="w-3 h-3" /></button>}
-                        {canOpen && <button onClick={(e) => { e.stopPropagation(); openFile(item.full_path); }} className="p-1 bg-orange-600 hover:bg-orange-500 rounded" title="Abrir"><Icon name="open" className="w-3 h-3" /></button>}
-                    </div>
-                );
+                return (<div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd} className="file-row p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50"><Icon name="file" className={`w-3.5 h-3.5 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} /><span className="flex-1 truncate" title={item.name}>{item.name}</span><span className="text-gray-500">{(item.size / 1024).toFixed(0)}K</span>{canEmulate && <button onClick={(e) => { e.stopPropagation(); loadInEmulator(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}{canOpen && <button onClick={(e) => { e.stopPropagation(); openFile(item.full_path); }} className="p-1 bg-orange-600 hover:bg-orange-500 rounded" title="Abrir"><Icon name="open" className="w-3 h-3" /></button>}</div>);
+            };
+
+            const [multicopyFiles, setMulticopyFiles] = useState([]);
+            const [multicopyDestinations, setMulticopyDestinations] = useState([]);
+
+            const executeMulticopy = async () => {
+                if (multicopyFiles.length === 0 || multicopyDestinations.length === 0) return;
+                setProcessing(true);
+                try {
+                    const r = await fetch(`${API_BASE}/multicopy`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ files: multicopyFiles, destinations: multicopyDestinations })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Copiados ${d.copied} archivos exitosamente`);
+                        setMulticopyFiles([]);
+                        setMulticopyDestinations([]);
+                    } else {
+                        setError(d.error);
+                    }
+                } catch (e) {
+                    setError(e.message);
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            const selectFolderForRule = () => {
+                const path = browserPath.join('/');
+                const fullDest = `${browserCollection}:${path}`;
+                if (!multicopyDestinations.includes(fullDest)) {
+                    setMulticopyDestinations([...multicopyDestinations, fullDest]);
+                }
+                setShowFolderBrowser(false);
+            };
+
+            const selectFileForRule = (item) => {
+                // Determine the full path based on the collection
+                let filePath;
+                if (fileBrowserCollection === 'TEMP') {
+                    // For TEMP files, just use the filename (backend will resolve it)
+                    filePath = item.name;
+                } else {
+                    // For FE/TS files, use the full_path from the item
+                    filePath = item.full_path || item.name;
+                }
+
+                if (!multicopyFiles.includes(filePath)) {
+                    setMulticopyFiles([...multicopyFiles, filePath]);
+                }
+                // Keep browser open to allow multiple selections
             };
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
                     <header className="border-b border-purple-500/30 bg-black/30 px-3 py-1.5">
                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-gradient-to-br from-cyan-400 to-purple-500 rounded flex items-center justify-center"><Icon name="terminal" className="w-4 h-4" /></div>
-                                <span className="font-bold text-sm">ZX TOSEC Organizer</span>
-                            </div>
+                            <div className="flex items-center gap-2"><div className="w-7 h-7 bg-gradient-to-br from-cyan-400 to-purple-500 rounded flex items-center justify-center"><Icon name="terminal" className="w-4 h-4" /></div><span className="font-bold text-sm">ZX TOSEC Organizer</span></div>
                             <div className="flex items-center gap-3">
-                                <div className="flex gap-2 text-xs">
-                                    <span className="text-gray-400">FE: <span className="text-blue-400">{feStructure?.total_files?.toLocaleString()}</span></span>
-                                    <span className="text-gray-400">TS: <span className="text-cyan-400">{tsStructure?.total_files?.toLocaleString()}</span></span>
-                                </div>
-                                <div className="flex gap-1">
-                                    {['explorer', 'temp', 'rules', 'log', 'compress', 'nas'].map(tab => (
-                                        <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp') loadTempFiles(); if (tab === 'rules') loadRules(); if (tab === 'nas') loadBackupFiles(); }}
-                                            className={`px-2 py-1 rounded text-xs ${activeTab === tab ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>
-                                            {tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'rules' ? 'Reglas' : tab === 'log' ? `Log (${copyLog.length})` : tab === 'compress' ? 'Comprimir' : 'Backup NAS'}
-                                        </button>
-                                    ))}
-                                </div>
+                                <div className="flex gap-2 text-xs"><span className="text-gray-400">FE: <span className="text-blue-400">{feStructure?.total_files?.toLocaleString()}</span></span><span className="text-gray-400">TS: <span className="text-cyan-400">{tsStructure?.total_files?.toLocaleString()}</span></span></div>
+                                <div className="flex gap-1">{['explorer', 'temp', 'multicopy', 'compress', 'nas'].map(tab => (<button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp') loadTempFiles(); if (tab === 'nas') loadBackupFiles(); }} className={`px-2 py-1 rounded text-xs ${activeTab === tab ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>{tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'multicopy' ? 'Multicopia' : tab === 'compress' ? 'Comprimir' : 'Backup NAS'}</button>))}</div>
                             </div>
                         </div>
                     </header>
@@ -405,217 +413,91 @@
                     {error && <div className="mx-3 mt-1 p-1.5 bg-red-500/20 border border-red-500/50 rounded text-xs flex justify-between"><span>{error}</span><button onClick={() => setError(null)}>✕</button></div>}
                     {success && <div className="mx-3 mt-1 p-1.5 bg-green-500/20 border border-green-500/50 rounded text-xs flex justify-between"><span>{success}</span><button onClick={() => setSuccess(null)}>✕</button></div>}
 
-                    <div className="p-2" style={{height: 'calc(100vh - 50px)'}}>
+                    <div className="p-2" style={{ height: 'calc(100vh - 50px)' }}>
                         {activeTab === 'explorer' && (
                             <div className="h-full flex gap-2">
                                 <div className="w-96 flex flex-col gap-2">
-                                    <div className="bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden" style={{height: panelHeight}}>
-                                        <div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div>
-                                        <div className="overflow-y-auto" style={{height: 'calc(100% - 20px)'}}>
-                                            {feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}
-                                        </div>
-                                    </div>
-                                    <div className="bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden" style={{height: panelHeight}}>
-                                        <div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div>
-                                        <div className="overflow-y-auto" style={{height: 'calc(100% - 20px)'}}>
-                                            {tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}
-                                        </div>
-                                    </div>
-                                    <div className="bg-black/40 border border-green-500/30 rounded overflow-hidden flex flex-col" style={{height: panelHeight}}>
-                                        <div className="px-2 py-1 flex items-center gap-1 border-b border-gray-700 bg-green-900/20">
-                                            <Icon name="play" className="w-3 h-3 text-green-400" /><span className="text-xs font-bold text-green-400">Emulador</span>
-                                            <a href="https://zx.researcher.su/en/" target="_blank" className="ml-auto text-xs text-gray-400 hover:text-white">ZX-Dream ↗</a>
-                                        </div>
-                                        <iframe src="https://torinak.com/qaop#128" className="w-full flex-1 border-0" allow="autoplay" title="Emulator" />
-                                    </div>
+                                    <div className="bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
+                                    <div className="bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
+                                    <div className="bg-black/40 border border-green-500/30 rounded overflow-hidden flex flex-col" style={{ height: panelHeight }}><div className="px-2 py-1 flex items-center gap-1 border-b border-gray-700 bg-green-900/20"><Icon name="play" className="w-3 h-3 text-green-400" /><span className="text-xs font-bold text-green-400">Emulador</span></div><iframe id="emulator-iframe" src="https://torinak.com/qaop#128" className="w-full flex-1 border-0" allow="autoplay; fullscreen; gamepad" title="Emulator" /></div>
                                 </div>
-
                                 <div className="flex-1 flex bg-black/40 border border-purple-500/20 rounded overflow-hidden">
-                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}>
-                                        <div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
-                                            <button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400">FE</button>
-                                            {fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}
-                                            {feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}
-                                            <button onClick={refreshFE} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto p-1">
-                                            {feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div>
-                                            : fePath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta FE ←</div>
-                                            : <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} />)}</div>}
-                                        </div>
-                                    </div>
-                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}>
-                                        <div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
-                                            <button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400">TS</button>
-                                            {tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}
-                                            {tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}
-                                            <button onClick={refreshTS} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
-                                        </div>
-                                        <div className="flex-1 overflow-y-auto p-1">
-                                            {tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div>
-                                            : tsPath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta TS ←</div>
-                                            : <div className="space-y-0.5">{tsItems.map((item, idx) => <FileRow key={idx} item={item} collection="TS" onFolderClick={clickFolderTS} />)}</div>}
-                                        </div>
-                                    </div>
+                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}><div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs"><button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400">FE</button>{fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}{feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}<button onClick={refreshFE} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-1">{feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div> : fePath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta FE ←</div> : <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} />)}</div>}</div></div>
+                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}><div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs"><button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400">TS</button>{tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}{tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}<button onClick={refreshTS} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-1">{tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div> : tsPath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta TS ←</div> : <div className="space-y-0.5">{tsItems.map((item, idx) => <FileRow key={idx} item={item} collection="TS" onFolderClick={clickFolderTS} />)}</div>}</div></div>
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'temp' && (
-                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-3"><h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2><button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button></div>
-                                <div className="space-y-1">{tempFiles.map((f, i) => (
-                                    <div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2">
-                                        <Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} />
-                                        <div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{f.file_type} • {(f.size/1024).toFixed(1)}KB</p></div>
-                                        {isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded"><Icon name="play" className="w-3 h-3" /></button>}
-                                        <button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded"><Icon name="copy" className="w-3 h-3" /></button>
-                                        <button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded"><Icon name="trash" className="w-3 h-3" /></button>
+                        {activeTab === 'temp' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><div className="flex justify-between items-center mb-3"><h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2><button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button></div><div className="space-y-1">{tempFiles.map((f, i) => (<div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2"><Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} /><div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{(f.size / 1024).toFixed(1)}KB</p></div>{isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded"><Icon name="play" className="w-3 h-3" /></button>}<button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded"><Icon name="copy" className="w-3 h-3" /></button><button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded"><Icon name="trash" className="w-3 h-3" /></button></div>))}</div></div>)}
+
+                        {activeTab === 'multicopy' && (<div className="h-full overflow-hidden flex flex-col bg-black/30 border border-purple-500/30 rounded p-3">
+                            <h2 className="font-bold mb-3 flex items-center gap-2"><Icon name="copy" className="w-4 h-4 text-blue-400" />Multicopia Flexible</h2>
+                            <div className="flex-1 flex gap-4 overflow-hidden">
+                                <div className="flex-1 flex flex-col bg-gray-800/30 rounded p-2 border border-gray-700">
+                                    <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-xs text-yellow-400">Archivos a Copiar ({multicopyFiles.length})</h3><div className="flex gap-1"><button onClick={() => { setFileBrowserCollection('TEMP'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('TEMP', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-yellow-600 rounded text-xs">+ TEMP</button><button onClick={() => { setFileBrowserCollection('FE'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('FE', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-blue-600 rounded text-xs">+ FE</button><button onClick={() => { setFileBrowserCollection('TS'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('TS', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-cyan-600 rounded text-xs">+ TS</button></div></div>
+                                    <div className="flex-1 overflow-y-auto space-y-1">
+                                        {multicopyFiles.map((f, i) => (
+                                            <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-900/50 rounded text-xs">
+                                                <Icon name="file" className="w-3 h-3 text-gray-400" />
+                                                <span className="flex-1 truncate" title={f}>{f}</span>
+                                                <button onClick={() => { const nf = [...multicopyFiles]; nf.splice(i, 1); setMulticopyFiles(nf); }} className="text-red-400 hover:text-red-300">✕</button>
+                                            </div>
+                                        ))}
+                                        {multicopyFiles.length === 0 && <p className="text-gray-500 text-xs text-center py-4">Añade archivos desde cualquier ubicación</p>}
                                     </div>
-                                ))}</div>
-                            </div>
-                        )}
-
-                        {activeTab === 'rules' && (
-                            <div className="h-full overflow-hidden flex flex-col bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-2"><h2 className="font-bold flex items-center gap-2"><Icon name="settings" className="w-4 h-4 text-cyan-400" />Reglas ({rules.length})</h2><div className="flex gap-1"><button onClick={loadRules} className="px-2 py-1 bg-gray-700 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button><button onClick={addRule} className="px-2 py-1 bg-green-600 rounded text-xs flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />Nueva</button><button onClick={saveRules} className="px-2 py-1 bg-purple-600 rounded text-xs flex items-center gap-1"><Icon name="check" className="w-3 h-3" />Guardar</button></div></div>
-                                <input type="text" value={ruleSearchFilter} onChange={(e) => setRuleSearchFilter(e.target.value)} placeholder="Buscar..." className="w-full px-2 py-1 mb-2 bg-gray-800 border border-gray-700 rounded text-xs" />
-                                <div className="flex-1 overflow-y-auto space-y-2">{filteredRules.map((rule, ri) => { const ai = rules.indexOf(rule); return (<div key={ai} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs"><div className="flex gap-2"><div className="flex-1 space-y-2"><div><div className="flex justify-between items-center mb-1"><span className="text-yellow-400 font-semibold">📁 Archivos ({rule.files.length})</span><div className="flex gap-1"><button onClick={() => addFileToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFileBrowserForRule(ai)} className="px-1 bg-yellow-600 rounded"><Icon name="search" className="w-3 h-3" /></button></div></div>{rule.files.map((f, fi) => (<div key={fi} className="flex gap-1 mb-1"><input type="text" value={f} onChange={(e) => updateFileInRule(ai, fi, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" placeholder="nombre.tap" /><button onClick={() => removeFileFromRule(ai, fi)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}</div><div><div className="flex justify-between items-center mb-1"><span className="text-cyan-400 font-semibold">📂 Destinos ({rule.categories.length})</span><div className="flex gap-1"><button onClick={() => addCategoryToRule(ai)} className="px-1 bg-green-600 rounded">+</button><button onClick={() => openFolderBrowser(ai)} className="px-1 bg-cyan-600 rounded"><Icon name="folder" className="w-3 h-3" /></button></div></div>{rule.categories.map((c, ci) => (<div key={ci} className="flex gap-1 mb-1 items-center"><span className={`px-1.5 py-0.5 rounded font-bold ${c.startsWith('FE:') ? 'bg-blue-600' : c.startsWith('TS:') ? 'bg-cyan-600' : 'bg-gray-600'}`}>{c.startsWith('FE:') ? 'FE' : c.startsWith('TS:') ? 'TS' : '??'}</span><input type="text" value={c} onChange={(e) => updateCategoryInRule(ai, ci, e.target.value)} className="flex-1 px-2 py-1 bg-gray-900 border border-gray-600 rounded" /><button onClick={() => removeCategoryFromRule(ai, ci)} className="px-1 bg-red-600 rounded"><Icon name="x" className="w-3 h-3" /></button></div>))}</div></div><button onClick={() => deleteRule(ai)} className="px-2 py-1 bg-red-600 rounded h-fit"><Icon name="trash" className="w-3 h-3" /></button></div></div>); })}</div>
-                            </div>
-                        )}
-
-                        {activeTab === 'log' && (
-                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <div className="flex justify-between items-center mb-3"><h2 className="font-bold">📋 Log de copias ({copyLog.length})</h2><button onClick={() => setCopyLog([])} className="px-2 py-1 bg-red-600 rounded text-xs">Limpiar</button></div>
-                                {copyLog.length === 0 ? <div className="text-center text-gray-500 py-8">Arrastra archivos entre FE y TS</div>
-                                : <div className="space-y-1">{copyLog.map((l, i) => (<div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-3"><span className="text-gray-500">{l.time}</span><span className={`px-1.5 py-0.5 rounded font-bold ${l.from === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.from}</span><span className="text-gray-400">→</span><span className={`px-1.5 py-0.5 rounded font-bold ${l.to === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{l.to}</span><span className="text-green-400 flex-1 truncate">{l.file}</span><span className="text-gray-400 truncate max-w-xs">/{l.dest}</span></div>))}</div>}
-                            </div>
-                        )}
-
-                        {activeTab === 'compress' && (
-                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="archive" className="w-5 h-5 text-orange-400" />Comprimir TOSEC por Volúmenes</h2>
-                                <div className="space-y-4 max-w-xl">
-                                    <div><label className="block text-sm font-medium mb-1">Colección</label><div className="flex gap-2"><button onClick={() => setCompressCollection('FE')} className={`px-4 py-2 rounded ${compressCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE ({feStructure?.total_files?.toLocaleString()})</button><button onClick={() => setCompressCollection('TS')} className={`px-4 py-2 rounded ${compressCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS ({tsStructure?.total_files?.toLocaleString()})</button></div></div>
-                                    <div><label className="block text-sm font-medium mb-1">Ruta destino</label><input type="text" value={compressDestPath} onChange={(e) => setCompressDestPath(e.target.value)} className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm" /></div>
-                                    <div><label className="block text-sm font-medium mb-1">Tamaño volumen (MB)</label><div className="flex gap-2 items-center"><input type="number" value={compressVolumeSize} onChange={(e) => setCompressVolumeSize(parseInt(e.target.value) || 0)} className="w-32 px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm" /><div className="flex gap-1"><button onClick={() => setCompressVolumeSize(700)} className="px-2 py-1 bg-gray-700 rounded text-xs">CD</button><button onClick={() => setCompressVolumeSize(4700)} className="px-2 py-1 bg-gray-700 rounded text-xs">DVD</button><button onClick={() => setCompressVolumeSize(8500)} className="px-2 py-1 bg-gray-700 rounded text-xs">DVD DL</button><button onClick={() => setCompressVolumeSize(25000)} className="px-2 py-1 bg-gray-700 rounded text-xs">BD</button></div></div></div>
-                                    <div><label className="block text-sm font-medium mb-1">Formato</label><div className="flex gap-2"><button onClick={() => setCompressFormat('zip')} className={`px-3 py-1 rounded ${compressFormat === 'zip' ? 'bg-purple-600' : 'bg-gray-700'}`}>ZIP</button><button onClick={() => setCompressFormat('7z')} className={`px-3 py-1 rounded ${compressFormat === '7z' ? 'bg-purple-600' : 'bg-gray-700'}`}>7Z</button><button onClick={() => setCompressFormat('rar')} className={`px-3 py-1 rounded ${compressFormat === 'rar' ? 'bg-purple-600' : 'bg-gray-700'}`}>RAR</button></div></div>
-                                    <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Iniciar Compresión'}</button>
+                                    {multicopyFiles.length > 0 && <button onClick={() => setMulticopyFiles([])} className="mt-2 text-xs text-red-400 hover:text-red-300 self-end">Limpiar lista</button>}
+                                </div>
+                                <div className="flex items-center justify-center"><Icon name="arrow-right" className="w-6 h-6 text-gray-600" /></div>
+                                <div className="flex-1 flex flex-col bg-gray-800/30 rounded p-2 border border-gray-700">
+                                    <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-xs text-cyan-400">Destinos ({multicopyDestinations.length})</h3><button onClick={() => { setBrowserCollection('FE'); setBrowserPath([]); loadBrowserFolders('FE', ''); setShowFolderBrowser(true); }} className="px-2 py-1 bg-cyan-600 rounded text-xs">+ Añadir</button></div>
+                                    <div className="flex-1 overflow-y-auto space-y-1">
+                                        {multicopyDestinations.map((d, i) => (
+                                            <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-900/50 rounded text-xs">
+                                                <Icon name="folder" className="w-3 h-3 text-cyan-400" />
+                                                <span className="flex-1 truncate" title={d}>{d}</span>
+                                                <button onClick={() => { const nd = [...multicopyDestinations]; nd.splice(i, 1); setMulticopyDestinations(nd); }} className="text-red-400 hover:text-red-300">✕</button>
+                                            </div>
+                                        ))}
+                                        {multicopyDestinations.length === 0 && <p className="text-gray-500 text-xs text-center py-4">Añade carpetas de destino</p>}
+                                    </div>
+                                    {multicopyDestinations.length > 0 && <button onClick={() => setMulticopyDestinations([])} className="mt-2 text-xs text-red-400 hover:text-red-300 self-end">Limpiar lista</button>}
                                 </div>
                             </div>
-                        )}
-
-                        {activeTab === 'nas' && (
-                            <div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3">
-                                <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup a NAS</h2>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    {/* Panel izquierdo - Archivos */}
-                                    <div className="bg-gray-800/50 border border-gray-700 rounded p-3">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <h3 className="font-semibold text-sm">Archivos en C:\ZX\Backups\</h3>
-                                            <div className="flex gap-1">
-                                                <button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button>
-                                                <button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button>
-                                            </div>
-                                        </div>
-                                        <div className="max-h-80 overflow-y-auto space-y-1">
-                                            {backupFiles.length === 0 ? (
-                                                <p className="text-gray-500 text-sm text-center py-4">No hay archivos de backup</p>
-                                            ) : backupFiles.map((f, i) => (
-                                                <label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50">
-                                                    <input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} />
-                                                    <Icon name="archive" className="w-4 h-4 text-orange-400" />
-                                                    <span className="flex-1 truncate text-sm">{f.name}</span>
-                                                    <span className="text-xs text-gray-400">{formatSize(f.size)}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                        {selectedBackupFiles.length > 0 && (
-                                            <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} archivos seleccionados</p>
-                                        )}
-                                    </div>
-                                    
-                                    {/* Panel derecho - Conexión FTP */}
-                                    <div className="bg-gray-800/50 border border-gray-700 rounded p-3">
-                                        <h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3>
-                                        
-                                        <div className="space-y-3">
-                                            <div className="p-2 bg-gray-900/50 rounded">
-                                                <p className="text-xs text-gray-400">Servidor</p>
-                                                <p className="text-sm text-cyan-400">revisteo.synology.me</p>
-                                            </div>
-                                            <div className="p-2 bg-gray-900/50 rounded">
-                                                <p className="text-xs text-gray-400">Usuario</p>
-                                                <p className="text-sm text-green-400">Flunky</p>
-                                            </div>
-                                            <div className="p-2 bg-gray-900/50 rounded">
-                                                <p className="text-xs text-gray-400">Protocolo</p>
-                                                <p className="text-sm text-purple-400">FTP sobre TLS</p>
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-gray-400 mb-1"><Icon name="lock" className="w-3 h-3 inline mr-1" />Contraseña</label>
-                                                <input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded text-sm" />
-                                            </div>
-                                            <div className="p-2 bg-gray-900/50 rounded">
-                                                <p className="text-xs text-gray-400">Carpeta remota</p>
-                                                <p className="text-sm text-yellow-400">/ZxTosec</p>
-                                            </div>
-                                            
-                                            {uploadProgress && (
-                                                <div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded">
-                                                    <p className="text-sm text-blue-300">{uploadProgress}</p>
-                                                </div>
-                                            )}
-                                            
-                                            <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0}
-                                                className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>
-                                                {uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}
-                                                {uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div className="mt-3 flex justify-end">
+                                <button onClick={executeMulticopy} disabled={multicopyFiles.length === 0 || multicopyDestinations.length === 0} className={`px-4 py-2 rounded font-bold text-sm flex items-center gap-2 ${multicopyFiles.length > 0 && multicopyDestinations.length > 0 ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}><Icon name="copy" className="w-4 h-4" /> Copiar {multicopyFiles.length} archivos a {multicopyDestinations.length} destinos</button>
                             </div>
-                        )}
-                    </div>
+                        </div>)}
 
-                    {/* Modales */}
-                    {showProcessModal && selectedFile && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-                            <div className="bg-gray-900 border border-purple-500/30 rounded max-w-2xl w-full max-h-[70vh] flex flex-col">
-                                <div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate max-w-md">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}><Icon name="x" className="w-4 h-4" /></button></div>
-                                <div className="flex-1 overflow-y-auto p-3 space-y-3">{['FE', 'TS'].map(col => (<div key={col} className="border border-gray-700 rounded p-2"><h4 className={`font-semibold text-xs mb-1 ${col === 'FE' ? 'text-blue-400' : 'text-cyan-400'}`}>{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} className="mt-0.5" /><span className="break-all">{p}</span></label>))}</div></div>))}</div>
-                                <div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div>
-                            </div>
-                        </div>
-                    )}
+                        {activeTab === 'compress' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="archive" className="w-5 h-5 text-orange-400" />Comprimir TOSEC</h2><div className="space-y-4 max-w-xl"><div><label className="block text-sm mb-1">Colección</label><div className="flex gap-2"><button onClick={() => setCompressCollection('FE')} className={`px-4 py-2 rounded ${compressCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE</button><button onClick={() => setCompressCollection('TS')} className={`px-4 py-2 rounded ${compressCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS</button></div></div><div><label className="block text-sm mb-1">Destino</label><input type="text" value={compressDestPath} onChange={(e) => setCompressDestPath(e.target.value)} className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded" /></div><div><label className="block text-sm mb-1">Tamaño volumen</label><div className="flex gap-2"><button onClick={() => setCompressVolumeSize(2048)} className={`px-4 py-2 rounded ${compressVolumeSize === 2048 ? 'bg-purple-600' : 'bg-gray-700'}`}>2 GB (FAT32)</button><button onClick={() => setCompressVolumeSize(4096)} className={`px-4 py-2 rounded ${compressVolumeSize === 4096 ? 'bg-purple-600' : 'bg-gray-700'}`}>4 GB (DVD)</button></div></div><div><label className="block text-sm mb-1">Formato</label><div className="flex gap-2">{['zip', '7z'].map(f => (<button key={f} onClick={() => setCompressFormat(f)} className={`px-3 py-1 rounded ${compressFormat === f ? 'bg-purple-600' : 'bg-gray-700'}`}>{f.toUpperCase()}</button>))}</div></div>
+                            {compressProgress && (<div className="p-3 bg-gray-800/50 rounded border border-gray-700"><div className="flex justify-between text-sm mb-2"><span className="text-gray-300">{compressProgress.progress}</span><span className="text-cyan-400 font-bold">{compressProgress.percent}%</span></div><div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-purple-500 to-cyan-500 h-4 rounded-full transition-all duration-300 flex items-center justify-center" style={{width: `${compressProgress.percent}%`}}><span className="text-xs text-white font-bold drop-shadow">{compressProgress.percent > 5 ? `${compressProgress.percent}%` : ''}</span></div></div></div>)}
+                            <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Comprimir'}</button></div></div>)}
 
-                    {showFolderBrowser && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-                            <div className="bg-gray-900 border border-purple-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col">
-                                <div className="p-3 border-b border-purple-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold text-cyan-400 text-sm">Seleccionar destino</h3><button onClick={() => setShowFolderBrowser(false)}><Icon name="x" className="w-4 h-4" /></button></div><div className="flex gap-1">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setBrowserCollection(c); setBrowserPath([]); loadBrowserFolders(c, ''); }} className={`px-2 py-1 rounded text-xs ${browserCollection === c ? (c === 'FE' ? 'bg-blue-600' : 'bg-cyan-600') : 'bg-gray-700'}`}>{c}</button>))}</div></div>
-                                <div className="px-3 py-1 bg-gray-800/50 border-b border-gray-700 text-xs"><span className={browserCollection === 'FE' ? 'text-blue-400 font-bold' : 'text-cyan-400 font-bold'}>{browserCollection}:</span><button onClick={() => { setBrowserPath([]); loadBrowserFolders(browserCollection, ''); }} className="text-purple-400 ml-1">/</button>{browserPath.map((s, i) => (<React.Fragment key={i}><button onClick={() => { const np = browserPath.slice(0, i+1); setBrowserPath(np); loadBrowserFolders(browserCollection, np.join('/')); }} className="text-purple-400">{s}/</button></React.Fragment>))}</div>
-                                <div className="flex-1 overflow-y-auto p-2 space-y-1">{browserFolders.map((f, i) => (<button key={i} onClick={() => { setBrowserPath([...browserPath, f.name]); loadBrowserFolders(browserCollection, [...browserPath, f.name].join('/')); }} className="w-full p-2 bg-gray-800/50 border border-gray-700/50 rounded hover:border-purple-500/50 text-left text-xs flex items-center gap-2"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="truncate">{f.name}</span>{f.has_subfolders && <span className="text-gray-500 ml-auto">→</span>}</button>))}</div>
-                                <div className="p-3 border-t border-purple-500/20 flex justify-between items-center"><span className="text-xs text-gray-300 font-mono bg-gray-800 px-2 py-1 rounded truncate max-w-xs">{browserCollection}:{browserPath.join('/')}</span><div className="flex gap-1"><button onClick={() => setShowFolderBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={selectFolderForRule} className="px-2 py-1 bg-green-600 rounded text-xs">Seleccionar</button></div></div>
-                            </div>
-                        </div>
-                    )}
+                        {
+                            activeTab === 'nas' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup NAS - revisteo.synology.me</h2><div className="grid grid-cols-2 gap-4">
+                                {/* Archivos locales */}
+                                <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><div className="flex justify-between items-center mb-2"><h3 className="font-semibold text-sm">C:\ZX\Backups\</h3><div className="flex gap-1"><button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs">🔄</button><button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button><button onClick={deselectAllBackupFiles} className="px-2 py-1 bg-gray-600 rounded text-xs">Ninguno</button></div></div><div className="max-h-64 overflow-y-auto space-y-1">{backupFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-4">Sin archivos</p> : backupFiles.map((f, i) => (<label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50"><input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} /><Icon name="archive" className="w-4 h-4 text-orange-400" /><span className="flex-1 truncate text-sm">{f.name}</span><span className="text-xs text-gray-400">{formatSize(f.size)}</span></label>))}</div>{selectedBackupFiles.length > 0 && <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} seleccionados ({formatSize(backupFiles.filter(f => selectedBackupFiles.includes(f.name)).reduce((a, b) => a + b.size, 0))})</p>}</div>
 
-                    {showFileBrowser && (
-                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-                            <div className="bg-gray-900 border border-yellow-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col">
-                                <div className="p-3 border-b border-yellow-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold text-yellow-400 text-sm">Seleccionar archivo</h3><button onClick={() => setShowFileBrowser(false)}><Icon name="x" className="w-4 h-4" /></button></div><div className="flex gap-1 mb-2">{['TEMP', 'FE', 'TS'].map(c => (<button key={c} onClick={() => { setFileBrowserCollection(c); setFileBrowserPath([]); loadFileBrowserContents(c, []); }} className={`px-2 py-1 rounded text-xs ${fileBrowserCollection === c ? 'bg-yellow-600' : 'bg-gray-700'}`}>{c}</button>))}</div><input type="text" value={fileSearchFilter} onChange={(e) => setFileSearchFilter(e.target.value)} placeholder="Filtrar..." className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs" /></div>
-                                <div className="flex-1 overflow-y-auto p-2 space-y-1">{fileBrowserItems.filter(it => !fileSearchFilter || it.name.toLowerCase().includes(fileSearchFilter.toLowerCase())).map((item, i) => (<button key={i} onClick={() => item.type === 'file' ? selectFileForRule(item) : (() => { setFileBrowserPath([...fileBrowserPath, item.name]); loadFileBrowserContents(fileBrowserCollection, [...fileBrowserPath, item.name]); })()} className="w-full p-2 bg-gray-800/50 border border-gray-700/50 rounded hover:border-yellow-500/50 text-left text-xs flex items-center gap-2"><Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3 h-3 ${item.type === 'folder' ? 'text-cyan-400' : 'text-yellow-400'}`} /><span className="truncate flex-1">{item.name}</span></button>))}</div>
-                                <div className="p-3 border-t border-yellow-500/20 flex justify-end"><button onClick={() => setShowFileBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cancelar</button></div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                                {/* Conexión FTP */}
+                                <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3><div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-2 text-xs"><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Servidor:</span> <span className="text-cyan-400">revisteo.synology.me</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Usuario:</span> <span className="text-green-400">Flunky</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Carpeta:</span> <span className="text-yellow-400">/ZxTosec</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Protocolo:</span> <span className="text-purple-400">FTPS</span></div></div>
+                                    <div><label className="block text-xs text-gray-400 mb-1">Contraseña</label><div className="flex gap-2"><input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded" /><button onClick={testFtpConnection} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Probar conexión"><Icon name="wifi" className="w-4 h-4" /></button></div></div>
+                                    {connectionStatus && (<div className={`p-2 rounded text-xs ${connectionStatus.status === 'ok' ? 'bg-green-900/30 border border-green-500/30 text-green-300' : connectionStatus.status === 'error' ? 'bg-red-900/30 border border-red-500/30 text-red-300' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300'}`}>{connectionStatus.message}</div>)}
+                                    {currentUploadFile && (<div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded text-xs"><p className="text-blue-300 mb-1">Subiendo {currentUploadFile.index}/{currentUploadFile.total}</p><p className="text-white font-medium truncate">{currentUploadFile.name}</p><p className="text-gray-400">{formatSize(currentUploadFile.size)}</p></div>)}
+                                    {uploadProgress.length > 0 && (<div className="max-h-32 overflow-y-auto space-y-1">{uploadProgress.map((p, i) => (<div key={i} className={`p-1 rounded text-xs flex items-center gap-2 ${p.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}><span className={p.success ? 'text-green-400' : 'text-red-400'}>{p.success ? '✓' : '✗'}</span><span className="truncate flex-1">{p.filename}</span>{p.success && <span className="text-gray-400">{p.speed} MB/s</span>}{!p.success && <span className="text-red-400 text-xs">{p.error}</span>}</div>))}</div>)}
+                                    <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0} className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>{uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}{uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}</button>
+                                </div></div>
+                            </div></div>)
+                        }
+                    </div >
+
+                    {showProcessModal && selectedFile && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-2xl w-full max-h-[70vh] flex flex-col"><div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}>✕</button></div><div className="flex-1 overflow-y-auto p-3">{['FE', 'TS'].map(col => (<div key={col} className="mb-2 border border-gray-700 rounded p-2"><h4 className="font-semibold text-xs mb-1">{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} /><span>{p}</span></label>))}</div></div>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div></div></div>)}
+                    {showFolderBrowser && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col"><div className="p-3 border-b border-purple-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold">Seleccionar destino</h3><button onClick={() => setShowFolderBrowser(false)}>✕</button></div><div className="flex gap-1">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setBrowserCollection(c); setBrowserPath([]); loadBrowserFolders(c, ''); }} className={`px-2 py-1 rounded text-xs ${browserCollection === c ? 'bg-purple-600' : 'bg-gray-700'}`}>{c}</button>))}</div></div><div className="px-3 py-1 bg-gray-800/50 text-xs"><button onClick={() => { setBrowserPath([]); loadBrowserFolders(browserCollection, ''); }} className="text-purple-400">{browserCollection}:/</button>{browserPath.map((s, i) => (<button key={i} onClick={() => { const np = browserPath.slice(0, i + 1); setBrowserPath(np); loadBrowserFolders(browserCollection, np.join('/')); }} className="text-purple-400">{s}/</button>))}</div><div className="flex-1 overflow-y-auto p-2 space-y-1">{browserFolders.map((f, i) => (<button key={i} onClick={() => { setBrowserPath([...browserPath, f.name]); loadBrowserFolders(browserCollection, [...browserPath, f.name].join('/')); }} className="w-full p-2 bg-gray-800/50 rounded hover:bg-gray-700/50 text-left text-xs flex items-center gap-2"><Icon name="folder" className="w-3 h-3 text-cyan-400" />{f.name}{f.has_subfolders && <span className="ml-auto text-gray-500">→</span>}</button>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-between"><span className="text-xs bg-gray-800 px-2 py-1 rounded">{browserCollection}:{browserPath.join('/')}</span><div className="flex gap-1"><button onClick={() => setShowFolderBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={selectFolderForRule} className="px-2 py-1 bg-green-600 rounded text-xs">OK</button></div></div></div></div>)}
+                    {showFileBrowser && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-yellow-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col"><div className="p-3 border-b border-yellow-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold text-yellow-400">Seleccionar archivo(s)</h3><button onClick={() => setShowFileBrowser(false)}>✕</button></div>{fileBrowserCollection !== 'TEMP' && <div className="flex gap-1 mb-2">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setFileBrowserCollection(c); setFileBrowserPath([]); loadFileBrowserContents(c, []); }} className={`px-2 py-1 rounded text-xs ${fileBrowserCollection === c ? 'bg-yellow-600' : 'bg-gray-700'}`}>{c}</button>))}</div>}{fileBrowserCollection !== 'TEMP' && <div className="px-2 py-1 bg-gray-800/50 text-xs mb-2"><button onClick={() => { setFileBrowserPath([]); loadFileBrowserContents(fileBrowserCollection, []); }} className="text-yellow-400">{fileBrowserCollection}:/</button>{fileBrowserPath.map((s, i) => (<button key={i} onClick={() => { const np = fileBrowserPath.slice(0, i + 1); setFileBrowserPath(np); loadFileBrowserContents(fileBrowserCollection, np); }} className="text-yellow-400">{s}/</button>))}</div>}<input type="text" value={fileSearchFilter} onChange={(e) => setFileSearchFilter(e.target.value)} placeholder="Filtrar..." className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs" /></div><div className="flex-1 overflow-y-auto p-2 space-y-1">{fileBrowserItems.filter(it => !fileSearchFilter || it.name.toLowerCase().includes(fileSearchFilter.toLowerCase())).map((item, i) => (<button key={i} onClick={() => { if (item.type === 'folder') { setFileBrowserPath([...fileBrowserPath, item.name]); loadFileBrowserContents(fileBrowserCollection, [...fileBrowserPath, item.name]); } else { selectFileForRule(item); } }} className="w-full p-2 bg-gray-800/50 rounded hover:bg-gray-700/50 text-left text-xs flex items-center gap-2"><Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3 h-3 ${item.type === 'folder' ? 'text-cyan-400' : 'text-yellow-400'}`} />{item.name}{item.type === 'folder' && <span className="ml-auto text-gray-500">→</span>}</button>))}</div><div className="p-3 border-t flex justify-end"><button onClick={() => setShowFileBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cerrar</button></div></div></div>)}
+                </div >
             );
         }
-
         ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
+
 </html>
