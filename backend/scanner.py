@@ -13,19 +13,104 @@ class DirectoryScanner:
     ALL_DISPLAYABLE = VALID_EXTENSIONS | COMMON_EXTENSIONS
     
     FILE_TYPES = {
-        '.tap': 'TAPs',
-        '.tzx': 'TZXs',
-        '.z80': 'Z80s',
-        '.sna': 'SNAs',
-        '.dsk': 'DISCOS',
-        '.trd': 'DISCOS',
-        '.scl': 'DISCOS',
+        '.tap': 'TAP',
+        '.tzx': 'TZX',
+        '.z80': 'Z80',
+        '.sna': 'SNA',
+        '.dsk': 'DSK',
+        '.trd': 'TRD',
+        '.scl': 'SCL',
+        '.rom': 'ROM',
         '.img': 'OTROS',
         '.zip': 'OTROS'
     }
     
     def __init__(self, config: Dict[str, str]):
         self.config = config
+
+    def scan_multicopy_sources(self) -> Dict[str, Any]:
+        """Escanea múltiples rutas de origen para la pestaña Multicopia."""
+        
+        # 1. Definir las rutas de origen
+        source_paths = [
+            self.config.get('TEMP_PATH', 'c:\\ZX\\TEMP\\'), 
+            self.config.get('FE_PATH', 'c:\\ZX\\ZX_v40.9_FE\\'),
+            self.config.get('TS_PATH', 'c:\\ZX\\ZX_v40.9_TS\\')
+        ]
+        
+        all_files: List[Dict[str, Any]] = []
+        total_files = 0
+        
+        for path in source_paths:
+            if not os.path.exists(path):
+                print(f"Advertencia: Ruta de origen no encontrada: {path}")
+                continue
+
+            try:
+                for item in os.listdir(path):
+                    item_path = os.path.join(path, item)
+                    
+                    if os.path.isfile(item_path):
+                        ext = os.path.splitext(item)[1].lower()
+                        
+                        # Solo incluir archivos de Spectrum válidos para la Multicopia
+                        if ext in self.VALID_EXTENSIONS:
+                            file_info = self._parse_tosec_filename(item)
+                            
+                            all_files.append({
+                                'name': item,
+                                'extension': ext,
+                                'file_type': self.FILE_TYPES.get(ext, 'OTROS'),
+                                'size': os.path.getsize(item_path),
+                                'tosec_info': file_info,
+                                'full_path': item_path,  # CLAVE: Guardamos la ruta completa
+                                'source_folder_name': Path(path).name # Nombre de la carpeta de origen (ej. TEMP, ZX_v40.9_FE)
+                            })
+                            total_files += 1
+
+            except Exception as e:
+                print(f"Error al escanear {path}: {e}")
+
+        return {
+            'total_files': total_files,
+            'files': all_files
+        }
+    
+    def get_multicopy_roots(self) -> Dict[str, Any]:
+        """
+        Devuelve la lista inicial de las tres carpetas raíz para la navegación
+        de la pestaña Multicopia.
+        """
+        # Para TS, usamos la ruta completa incluyendo TOSEC_v40.9 para ser consistente
+        ts_full_path = os.path.join(
+            self.config.get('TS_PATH', 'c:\\ZX\\ZX_v40.9_TS\\'),
+            self.config.get('TS_TOSEC_SUBPATH', 'TOSEC_v40.9')
+        )
+        
+        root_paths = {
+            'TEMP': self.config.get('TEMP_PATH', 'c:\\ZX\\TEMP\\'), 
+            'FE': self.config.get('FE_PATH', 'c:\\ZX\\ZX_v40.9_FE\\'),
+            'TS': ts_full_path
+        }
+        
+        initial_items = []
+        for name, full_path in root_paths.items():
+            if os.path.exists(full_path):
+                # NOTA: No contamos archivos recursivamente aquí para evitar lentitud
+                initial_items.append({
+                    'name': f"[{name}]",
+                    'type': 'root_collection',
+                    'path': full_path,
+                    'full_path': full_path,
+                    'file_count': 0, 
+                    'has_subfolders': True
+                })
+        
+        return {
+            'path': 'MULTICOPY_ROOT',
+            'items': initial_items,
+            'total_items': len(initial_items)
+        }
     
     def scan_root_folders(self, base_path: str, max_depth: int = 3) -> Dict[str, Any]:
         """Escanea las carpetas raíz - CONTEO COMPLETO con os.walk"""
@@ -40,7 +125,6 @@ class DirectoryScanner:
                 item_path = os.path.join(base_path, item)
                 
                 if os.path.isdir(item_path):
-                    # Conteo COMPLETO con os.walk para precisión
                     file_count = self._count_all_files(item_path)
                     
                     folders.append({
@@ -68,12 +152,12 @@ class DirectoryScanner:
         count = 0
         try:
             for root, dirs, files in os.walk(path):
-                count += len(files)  # Contar TODOS los archivos
+                count += len(files)
         except (PermissionError, OSError):
             pass
         return count
     
-    def get_folder_contents(self, folder_path: str, include_files: bool = True, collection: str = None) -> Dict[str, Any]:
+    def get_folder_contents(self, folder_path: str, include_files: bool = True, collection: str = None, fast_scan: bool = False) -> Dict[str, Any]:
         """Obtiene el contenido de una carpeta específica"""
         if not os.path.exists(folder_path):
             return {'error': 'Carpeta no encontrada', 'items': []}
@@ -89,10 +173,14 @@ class DirectoryScanner:
                 item_path = os.path.join(folder_path, item)
                 
                 if os.path.isdir(item_path):
-                    total_files = self._count_files_limited(item_path, max_depth=3)
-                    direct_files = self._count_direct_files(item_path)
+                    if fast_scan:
+                        total_files = 0
+                        direct_files = 0
+                    else:
+                        total_files = self._count_all_files(item_path)
+                        direct_files = self._count_direct_files(item_path)
                     
-                    if is_ts_collection:
+                    if is_ts_collection and not fast_scan:
                         near_limit = direct_files >= 200
                         at_limit = direct_files >= 230
                     else:
@@ -109,7 +197,8 @@ class DirectoryScanner:
                         'near_limit': near_limit,
                         'at_limit': at_limit,
                         'is_range': is_range,
-                        'path': item
+                        'path': item,
+                        'full_path': item_path
                     })
                     folder_count += 1
                 
@@ -153,7 +242,7 @@ class DirectoryScanner:
         
         except Exception as e:
             return {'error': str(e), 'items': []}
-    
+
     def scan_temp_files(self, temp_path: str) -> Dict[str, Any]:
         """Escanea archivos en TEMP"""
         if not os.path.exists(temp_path):
@@ -224,7 +313,7 @@ class DirectoryScanner:
             return {'success': True, 'message': f'Archivo {filename} eliminado'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
-    
+
     def copy_file_to_destinations(self, source_file: str, destinations: List[str], collection: str) -> Dict[str, Any]:
         """Copia un archivo a múltiples destinos"""
         results = {
@@ -237,7 +326,11 @@ class DirectoryScanner:
             results['errors'].append(f"Archivo origen no existe: {source_file}")
             return results
         
-        base_path = self.config['FE_PATH'] if collection == 'FE' else self.config['TS_PATH']
+        # Para TS, incluir TOSEC_v40.9 en la ruta base
+        if collection == 'FE':
+            base_path = self.config['FE_PATH']
+        else:  # TS
+            base_path = os.path.join(self.config['TS_PATH'], self.config.get('TS_TOSEC_SUBPATH', 'TOSEC_v40.9'))
         
         for dest_path in destinations:
             try:
@@ -318,8 +411,15 @@ class DirectoryScanner:
         return False
     
     def _is_range_folder(self, folder_name: str) -> bool:
-        """Detecta carpeta de rango alfabético"""
-        return bool(re.match(r'^[A-Z0-9].*\s*-\s*[A-Z0-9].*$', folder_name, re.IGNORECASE))
+        """
+        Detecta carpeta de rango alfabético REAL.
+        Un rango válido tiene formato: "AAA - AZZ" o "A - AZ" o "123 - L"
+        DEBE tener espacios alrededor del guión para distinguir de nombres como "R-TYPE"
+        Las partes deben ser cortas (1-6 caracteres) y sin espacios internos.
+        NO detecta nombres de juegos como "QUIVIRA - THE ADVENTURE"
+        """
+        match = re.match(r'^([A-Z0-9]{1,6})\s+-\s+([A-Z0-9]{1,6})$', folder_name, re.IGNORECASE)
+        return bool(match)
     
     def _parse_range_folder(self, folder_name: str) -> tuple:
         """Parsea carpeta de rango"""
@@ -502,10 +602,43 @@ class DirectoryScanner:
 
     def _create_game_folder_name(self, title: str) -> str:
         """Crea nombre de carpeta del juego"""
-        clean = re.sub(r'\s+v\.?\s?\d+(\.\d+)*(\s?beta|\s?alpha)?$', '', title, flags=re.IGNORECASE).strip()
-        clean = re.sub(r'\s+(?:[2-9]|I{2,3}|IV|V|VI|VII|VIII|IX|X|part\s+\d+|p\d+)$', '', clean, flags=re.IGNORECASE).strip()
+        clean = title.strip()
+        
+        # Eliminar sufijos de versión (v1.0, v2 beta, etc.)
+        clean = re.sub(r'\s+v\.?\s?\d+(\.\d+)*(\s?beta|\s?alpha)?$', '', clean, flags=re.IGNORECASE).strip()
+        
+        # Eliminar sufijos de parte/episodio con guión: "- Parte 01", "- Part 2", "- Episode 3"
+        clean = re.sub(r'\s*-\s*(parte|part|episode|ep|capitulo|chapter)\s*\d+.*$', '', clean, flags=re.IGNORECASE).strip()
+        
+        # Eliminar sufijos de parte sin guión: "Parte 01", "Part 2"
+        clean = re.sub(r'\s+(parte|part|episode|ep|capitulo|chapter)\s*\d+.*$', '', clean, flags=re.IGNORECASE).strip()
+        
+        # NO eliminamos números de secuela (2, 3, II, III) porque son parte del nombre
+        # Ejemplo: "Cursed Castle 2" debe quedarse como "CURSED CASTLE 2"
+        
+        # Eliminar caracteres no válidos para nombres de carpeta
         clean = re.sub(r'[<>:"/\\|?*]', '_', clean)
+        
         return clean.upper()
+
+    def _get_initial_letter(self, title: str) -> str:
+        """Obtiene letra inicial"""
+        if not title:
+            return '123'
+        for char in title:
+            if char.isalpha():
+                return char.upper()
+            elif char.isdigit():
+                return '123'
+        return '123'
+    
+    def _get_decade_range(self, year: int) -> str:
+        """Calcula rango de década"""
+        if year < 1980:
+            return "19XX"
+        start = (year // 10) * 10
+        end = start + 9
+        return f"{start}-{end}"
 
     def _suggest_destination(self, tosec_info: Dict[str, Any], extension: str, original_filename: str) -> Dict[str, List[str]]:
         """Sugiere rutas de destino - CORREGIDO para rangos en AÑOS de TS"""
@@ -553,70 +686,50 @@ class DirectoryScanner:
         ts_carpetas_path = os.path.join(self.config['TS_PATH'], ts_base, "00 CARPETAS", letter)
         range_folder_carpetas = self._find_range_folder(ts_carpetas_path, title)
         if range_folder_carpetas:
-            suggestions['TS'].append(f"{ts_base}/00 CARPETAS/{letter}/{range_folder_carpetas}/{filename}")
+            suggestions['TS'].append(f"00 CARPETAS/{letter}/{range_folder_carpetas}/{game_folder}/{filename}")
         else:
-            suggestions['TS'].append(f"{ts_base}/00 CARPETAS/{letter}/{game_folder}/{filename}")
+            suggestions['TS'].append(f"00 CARPETAS/{letter}/{game_folder}/{filename}")
         
-        # 01 AÑOS - CORREGIDO: Buscar rangos 123-L / M-Z
+        # 01 AÑOS
         for year in years:
             if 1982 <= year <= 1993:
                 ts_year_path = os.path.join(self.config['TS_PATH'], ts_base, "01 AÑOS/1982-1993 CLASICOS", str(year), letter, file_type)
                 range_folder = self._find_range_folder(ts_year_path, title)
                 if range_folder:
-                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{range_folder}/{filename}")
+                    suggestions['TS'].append(f"01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{range_folder}/{filename}")
                 else:
-                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{filename}")
+                    suggestions['TS'].append(f"01 AÑOS/1982-1993 CLASICOS/{year}/{letter}/{file_type}/{filename}")
                     
             elif 1994 <= year <= 2025:
                 decade = self._get_decade_range(year)
-                # CORREGIDO: Buscar rangos en carpeta TAPs (123-L, M-Z)
                 ts_homebrew_year_path = os.path.join(self.config['TS_PATH'], ts_base, f"01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}")
                 letter_range = self._find_letter_range_folder(ts_homebrew_year_path, title)
                 
                 if letter_range:
-                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{letter_range}/{filename}")
+                    suggestions['TS'].append(f"01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{letter_range}/{filename}")
                 else:
-                    suggestions['TS'].append(f"{ts_base}/01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{filename}")
+                    suggestions['TS'].append(f"01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{filename}")
         
         # 02 CLASICOS
         if any(1982 <= y <= 1993 for y in years):
             ts_classic_path = os.path.join(self.config['TS_PATH'], ts_base, "02 CLASICOS/ALFABETO CLASICOS", letter, file_type)
             range_folder = self._find_range_folder(ts_classic_path, title)
             if range_folder:
-                suggestions['TS'].append(f"{ts_base}/02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
+                suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
             else:
-                suggestions['TS'].append(f"{ts_base}/02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
+                suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
         
         # 03 HOMEBREW
         if any(1994 <= y <= 2025 for y in years):
             ts_homebrew_path = os.path.join(self.config['TS_PATH'], ts_base, "03 HOMEBREW/ALFABETO HOMEBREW", letter, file_type)
             range_folder = self._find_range_folder(ts_homebrew_path, title)
             if range_folder:
-                suggestions['TS'].append(f"{ts_base}/03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{range_folder}/{filename}")
+                suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{range_folder}/{filename}")
             else:
-                suggestions['TS'].append(f"{ts_base}/03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{filename}")
+                suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{filename}")
         
         return suggestions
-    
-    def _get_initial_letter(self, title: str) -> str:
-        """Obtiene letra inicial"""
-        if not title:
-            return '123'
-        for char in title:
-            if char.isalpha():
-                return char.upper()
-            elif char.isdigit():
-                return '123'
-        return '123'
-    
-    def _get_decade_range(self, year: int) -> str:
-        """Calcula rango de década"""
-        if year < 1980:
-            return "19XX"
-        start = (year // 10) * 10
-        end = start + 9
-        return f"{start}-{end}"
-    
+
     def calculate_stats(self, fe_path: str, ts_path: str) -> Dict[str, Any]:
         """Calcula estadísticas"""
         stats = {

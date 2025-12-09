@@ -66,7 +66,8 @@
                 upload: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>,
                 server: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>,
                 lock: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
-                wifi: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>
+                wifi: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>,
+                edit: <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             };
             return icons[name] || icons.folder;
         };
@@ -103,6 +104,16 @@
             const [fileSearchFilter, setFileSearchFilter] = useState('');
             const [ruleSearchFilter, setRuleSearchFilter] = useState('');
 
+            // Multicopy State
+            const [mcSourceCollection, setMcSourceCollection] = useState('TEMP');
+            const [mcSourcePath, setMcSourcePath] = useState([]);
+            const [mcSourceItems, setMcSourceItems] = useState([]);
+            const [mcSelectedFiles, setMcSelectedFiles] = useState([]);
+            const [mcDestCollection, setMcDestCollection] = useState('FE');
+            const [mcDestPath, setMcDestPath] = useState([]);
+            const [mcDestItems, setMcDestItems] = useState([]);
+            const [mcLoading, setMcLoading] = useState(false);
+
             // Compresión
             const [compressCollection, setCompressCollection] = useState('FE');
             const [compressDestPath, setCompressDestPath] = useState('C:\\ZX\\Backups');
@@ -122,7 +133,11 @@
             const [selectedFilesFE, setSelectedFilesFE] = useState([]);
             const [selectedFilesTS, setSelectedFilesTS] = useState([]);
 
-            useEffect(() => { loadStructures(); }, []);
+            useEffect(() => { 
+                loadStructures(); 
+                loadPanelContents('FE', [], setFeItems, setFeLoading);
+                loadPanelContents('TS', [], setTsItems, setTsLoading);
+            }, []);
 
             // Polling del progreso de compresión
             useEffect(() => {
@@ -156,7 +171,9 @@
                 setLoading(true);
                 try {
                     const pathStr = pathArray.join('/');
-                    const response = await fetch(`${API_BASE}/browse/${collection}/${encodeURIComponent(pathStr)}`);
+                    // Si path está vacío, llamar al endpoint de raíz
+                    const url = pathStr ? `${API_BASE}/browse/${collection}/${encodeURIComponent(pathStr)}` : `${API_BASE}/browse/${collection}`;
+                    const response = await fetch(url);
                     const data = await response.json();
                     setItems(data.items || []);
                 } catch (err) { setError(err.message); }
@@ -170,8 +187,18 @@
             const openFile = async (filePath) => { try { await fetch(`${API_BASE}/open-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: filePath }) }); } catch (err) { setError(err.message); } };
 
             // EMULADOR - Abre en nueva ventana
-            const loadInEmulator = (filePath, fileName) => {
-                window.open(`${API_BASE}/emulator?path=${encodeURIComponent(filePath)}`, '_blank', 'width=1200,height=800');
+            const loadInEmulator = async (filePath, fileName) => {
+                try {
+                    const r = await fetch(`${API_BASE}/emulator?path=${encodeURIComponent(filePath)}`);
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`🎮 Abriendo: ${fileName}`);
+                    } else {
+                        setError(d.error || 'Error al abrir emulador');
+                    }
+                } catch (e) {
+                    setError('Error: ' + e.message);
+                }
             };
 
             // DRAG & DROP
@@ -199,14 +226,151 @@
             };
 
             // Navegación
-            const clickFolderFE = (f) => { const np = [...fePath, f.name]; setFePath(np); loadPanelContents('FE', np, setFeItems, setFeLoading); };
-            const clickRootFE = (f) => { setFePath([f.name]); loadPanelContents('FE', [f.name], setFeItems, setFeLoading); };
-            const breadcrumbFE = (i) => { if (i === -1) { setFePath([]); setFeItems([]); } else { const np = fePath.slice(0, i + 1); setFePath(np); loadPanelContents('FE', np, setFeItems, setFeLoading); } };
-            const refreshFE = () => { if (fePath.length > 0) loadPanelContents('FE', fePath, setFeItems, setFeLoading); loadStructures(); };
-            const clickFolderTS = (f) => { const np = [...tsPath, f.name]; setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); };
-            const clickRootTS = (f) => { setTsPath([f.name]); loadPanelContents('TS', [f.name], setTsItems, setTsLoading); };
-            const breadcrumbTS = (i) => { if (i === -1) { setTsPath([]); setTsItems([]); } else { const np = tsPath.slice(0, i + 1); setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); } };
-            const refreshTS = () => { if (tsPath.length > 0) loadPanelContents('TS', tsPath, setTsItems, setTsLoading); loadStructures(); };
+            const clickFolderFE = (f) => { const np = [...fePath, f.name]; setFePath(np); setSelectedFilesFE([]); loadPanelContents('FE', np, setFeItems, setFeLoading); };
+            const clickRootFE = (f) => { setFePath([f.name]); setSelectedFilesFE([]); loadPanelContents('FE', [f.name], setFeItems, setFeLoading); };
+            const breadcrumbFE = (i) => { setSelectedFilesFE([]); if (i === -1) { setFePath([]); loadPanelContents('FE', [], setFeItems, setFeLoading); } else { const np = fePath.slice(0, i + 1); setFePath(np); loadPanelContents('FE', np, setFeItems, setFeLoading); } };
+            const refreshFE = () => { loadPanelContents('FE', fePath, setFeItems, setFeLoading); loadStructures(); };
+            const clickFolderTS = (f) => { const np = [...tsPath, f.name]; setTsPath(np); setSelectedFilesTS([]); loadPanelContents('TS', np, setTsItems, setTsLoading); };
+            const clickRootTS = (f) => { setTsPath([f.name]); setSelectedFilesTS([]); loadPanelContents('TS', [f.name], setTsItems, setTsLoading); };
+            const breadcrumbTS = (i) => { setSelectedFilesTS([]); if (i === -1) { setTsPath([]); loadPanelContents('TS', [], setTsItems, setTsLoading); } else { const np = tsPath.slice(0, i + 1); setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); } };
+            const refreshTS = () => { loadPanelContents('TS', tsPath, setTsItems, setTsLoading); loadStructures(); };
+
+            // Funciones para crear carpeta
+            const [showNewFolderModal, setShowNewFolderModal] = useState(false);
+            const [newFolderName, setNewFolderName] = useState('');
+            const [newFolderCollection, setNewFolderCollection] = useState('FE');
+
+            const openNewFolderModal = (collection) => {
+                setNewFolderCollection(collection);
+                setNewFolderName('');
+                setShowNewFolderModal(true);
+            };
+
+            const createNewFolder = async () => {
+                if (!newFolderName.trim()) return;
+                const basePath = newFolderCollection === 'FE' ? fePath : tsPath;
+                try {
+                    const r = await fetch(`${API_BASE}/folder/create`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            collection: newFolderCollection, 
+                            path: basePath.join('/'),
+                            name: newFolderName.trim()
+                        })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Carpeta "${newFolderName}" creada`);
+                        setShowNewFolderModal(false);
+                        setNewFolderName('');
+                        if (newFolderCollection === 'FE') refreshFE(); else refreshTS();
+                    } else {
+                        setError(d.error || 'Error al crear carpeta');
+                    }
+                } catch (e) { setError(e.message); }
+            };
+
+            // Funciones para borrar archivos seleccionados
+            const deleteSelectedFiles = async (collection) => {
+                const selected = collection === 'FE' ? selectedFilesFE : selectedFilesTS;
+                if (selected.length === 0) return;
+                if (!confirm(`¿Borrar ${selected.length} archivo(s)?`)) return;
+                
+                try {
+                    const r = await fetch(`${API_BASE}/files/delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ files: selected })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Borrados ${d.deleted} archivo(s)`);
+                        if (collection === 'FE') { setSelectedFilesFE([]); refreshFE(); } 
+                        else { setSelectedFilesTS([]); refreshTS(); }
+                    } else {
+                        setError(d.error);
+                    }
+                } catch (e) { setError(e.message); }
+            };
+
+            // Borrar carpeta
+            const deleteFolder = async (collection, folderPath, folderName) => {
+                const hasContents = confirm(`¿Borrar la carpeta "${folderName}"?\n\nSi tiene contenido, pulsa Cancelar y luego confirma si deseas borrar TODO.`);
+                if (!hasContents) {
+                    // Preguntar si borrar con contenido
+                    if (!confirm(`¿Borrar "${folderName}" Y TODO SU CONTENIDO?\n\n⚠️ Esta acción NO se puede deshacer.`)) return;
+                }
+                
+                try {
+                    const basePath = collection === 'FE' ? fePath : tsPath;
+                    const r = await fetch(`${API_BASE}/folder/delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            collection, 
+                            path: [...basePath, folderName].join('/'),
+                            force: !hasContents  // Si dijo NO al primer confirm, forzar borrado
+                        })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Carpeta "${folderName}" eliminada`);
+                        if (collection === 'FE') refreshFE(); else refreshTS();
+                    } else {
+                        // Si falla porque no está vacía, preguntar si forzar
+                        if (d.error && d.error.includes('no está vacía')) {
+                            if (confirm(`La carpeta no está vacía. ¿Borrar TODO su contenido?\n\n⚠️ Esta acción NO se puede deshacer.`)) {
+                                const r2 = await fetch(`${API_BASE}/folder/delete`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ collection, path: [...basePath, folderName].join('/'), force: true })
+                                });
+                                const d2 = await r2.json();
+                                if (d2.success) {
+                                    setSuccess(`Carpeta "${folderName}" y su contenido eliminados`);
+                                    if (collection === 'FE') refreshFE(); else refreshTS();
+                                } else {
+                                    setError(d2.error);
+                                }
+                            }
+                        } else {
+                            setError(d.error);
+                        }
+                    }
+                } catch (e) { setError(e.message); }
+            };
+
+            // Renombrar archivo o carpeta
+            const renameFile = async (oldPath, oldName) => {
+                const newName = prompt(`Renombrar "${oldName}":\n\nNuevo nombre:`, oldName);
+                if (!newName || newName === oldName) return;
+                
+                try {
+                    const r = await fetch(`${API_BASE}/files/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_path: oldPath, new_name: newName })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Renombrado: "${oldName}" → "${newName}"`);
+                        refreshFE();
+                        refreshTS();
+                    } else {
+                        setError(d.error || 'Error al renombrar');
+                    }
+                } catch (e) { setError(e.message); }
+            };
+
+            // Toggle selección de archivo
+            const toggleFileSelection = (collection, filePath) => {
+                if (collection === 'FE') {
+                    setSelectedFilesFE(prev => prev.includes(filePath) ? prev.filter(f => f !== filePath) : [...prev, filePath]);
+                } else {
+                    setSelectedFilesTS(prev => prev.includes(filePath) ? prev.filter(f => f !== filePath) : [...prev, filePath]);
+                }
+            };
 
             const getFileExt = (name) => { const i = name.lastIndexOf('.'); return i > 0 ? name.substring(i).toLowerCase() : ''; };
             const isEmulable = (name) => EMULABLE_EXT.includes(getFileExt(name));
@@ -255,15 +419,15 @@
             const toggleDestination = (c, p) => { setSelectedDestinations(prev => { const l = prev[c] || []; return l.includes(p) ? { ...prev, [c]: l.filter(x => x !== p) } : { ...prev, [c]: [...l, p] }; }); };
 
             // Compresión
-            const startCompression = async () => { 
-                if (!compressDestPath) { setError('Falta ruta'); return; } 
-                setCompressing(true); 
-                setCompressProgress({ progress: 'Iniciando...', percent: 0 }); 
-                try { 
-                    const r = await fetch(`${API_BASE}/compress/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection: compressCollection, dest_path: compressDestPath, volume_size_mb: compressVolumeSize, format: compressFormat }) }); 
-                    const d = await r.json(); 
-                    if (!d.success) { setError(d.error); setCompressing(false); } 
-                } catch (err) { setError(err.message); setCompressing(false); } 
+            const startCompression = async () => {
+                if (!compressDestPath) { setError('Falta ruta'); return; }
+                setCompressing(true);
+                setCompressProgress({ progress: 'Iniciando...', percent: 0 });
+                try {
+                    const r = await fetch(`${API_BASE}/compress/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection: compressCollection, dest_path: compressDestPath, volume_size_mb: compressVolumeSize, format: compressFormat }) });
+                    const d = await r.json();
+                    if (!d.success) { setError(d.error); setCompressing(false); }
+                } catch (err) { setError(err.message); setCompressing(false); }
             };
 
             // Backup NAS
@@ -334,43 +498,173 @@
             };
 
             const filteredRules = rules.filter(r => { if (!ruleSearchFilter) return true; const s = ruleSearchFilter.toLowerCase(); return r.files.some(f => f.toLowerCase().includes(s)) || r.categories.some(c => c.toLowerCase().includes(s)); });
-            const panelHeight = 'calc((100vh - 130px) / 3)';
+            const panelHeight = 'calc((100vh - 130px) / 2)';
 
-            const FileRow = ({ item, collection, onFolderClick }) => {
+            const FileRow = ({ item, collection, onFolderClick, isSelected, onToggleSelect, onDeleteFolder, onRename }) => {
                 const canEmulate = item.type === 'file' && isEmulable(item.name);
                 const canOpen = item.type === 'file' && isOpenable(item.name);
                 if (item.type === 'folder') {
-                    return (<div onClick={() => onFolderClick(item)} className="p-1.5 rounded border text-xs flex items-center gap-1.5 cursor-pointer bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50"><Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" /><span className="flex-1 truncate">{item.name}</span><span className="text-purple-400">{item.file_count?.toLocaleString()}</span></div>);
+                    return (<div className="p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50 group">
+                        <div onClick={() => onFolderClick(item)} className="flex-1 flex items-center gap-1.5 cursor-pointer">
+                            <Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="flex-1 truncate">{item.name}</span>
+                            <span className="text-purple-400">{item.file_count?.toLocaleString()}</span>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); onRename && onRename(item.full_path, item.name); }} className="p-1 bg-blue-600/50 hover:bg-blue-500 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Renombrar"><Icon name="edit" className="w-2.5 h-2.5" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); onDeleteFolder && onDeleteFolder(collection, item.full_path, item.name); }} className="p-1 bg-red-600/50 hover:bg-red-500 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Borrar carpeta"><Icon name="trash" className="w-2.5 h-2.5" /></button>
+                    </div>);
                 }
-                return (<div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd} className="file-row p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50"><Icon name="file" className={`w-3.5 h-3.5 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} /><span className="flex-1 truncate" title={item.name}>{item.name}</span><span className="text-gray-500">{(item.size / 1024).toFixed(0)}K</span>{canEmulate && <button onClick={(e) => { e.stopPropagation(); loadInEmulator(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}{canOpen && <button onClick={(e) => { e.stopPropagation(); openFile(item.full_path); }} className="p-1 bg-orange-600 hover:bg-orange-500 rounded" title="Abrir"><Icon name="open" className="w-3 h-3" /></button>}</div>);
+                return (<div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd} className={`file-row p-1.5 rounded border text-xs flex items-center gap-1.5 group ${isSelected ? 'bg-purple-600/40 border-purple-500' : 'bg-gray-800/50 border-gray-700/50 hover:border-purple-500/50'}`}>
+                    <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect && onToggleSelect(collection, item.full_path)} className="w-3 h-3 accent-purple-500" onClick={(e) => e.stopPropagation()} />
+                    <Icon name="file" className={`w-3.5 h-3.5 ${canEmulate ? 'text-green-400' : canOpen ? 'text-orange-400' : 'text-gray-400'}`} />
+                    <span className="flex-1 truncate" title={item.name}>{item.name}</span>
+                    <span className="text-gray-500">{(item.size / 1024).toFixed(0)}K</span>
+                    <button onClick={(e) => { e.stopPropagation(); onRename && onRename(item.full_path, item.name); }} className="p-1 bg-blue-600/50 hover:bg-blue-500 rounded opacity-0 group-hover:opacity-100 transition-opacity" title="Renombrar"><Icon name="edit" className="w-2.5 h-2.5" /></button>
+                    {canEmulate && <button onClick={(e) => { e.stopPropagation(); loadInEmulator(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}
+                    {canOpen && <button onClick={(e) => { e.stopPropagation(); openFile(item.full_path); }} className="p-1 bg-orange-600 hover:bg-orange-500 rounded" title="Abrir"><Icon name="open" className="w-3 h-3" /></button>}
+                </div>);
             };
 
-            const [multicopyFiles, setMulticopyFiles] = useState([]);
-            const [multicopyDestinations, setMulticopyDestinations] = useState([]);
+            // Multicopy Helpers
+            const loadMcSourceContents = async (collection, pathArray) => {
+                setMcLoading(true);
+                try {
+                    const pathStr = pathArray.join('/');
+                    const url = pathStr ? `${API_BASE}/multicopy/browse/${encodeURIComponent(pathStr)}` : `${API_BASE}/multicopy/browse`;
+                    // Note: The browse endpoint handles full paths. For root, we need to handle collection selection manually if browse returns all roots.
+                    // Actually, browse returns [FE, TS, TEMP] at root. We want to browse *inside* a specific collection.
+                    // Let's use the existing browse logic: if path is empty, we might need to construct the root path for the collection.
 
-            const executeMulticopy = async () => {
-                if (multicopyFiles.length === 0 || multicopyDestinations.length === 0) return;
+                    // Better approach: Use the existing browse endpoint but filter/direct based on collection.
+                    // If pathArray is empty, we need the root of the collection.
+                    let fullPath = 'ROOT';
+                    if (pathArray.length > 0) {
+                        // If we have a path, it's a full path from the API
+                        fullPath = pathArray[pathArray.length - 1]; // The last item in pathArray should be the full path? 
+                        // Wait, pathArray usually stores names. We need full paths for the API.
+                        // Let's store full objects in path or just use the full path string.
+                        // For simplicity, let's say pathArray stores the full path strings.
+                        fullPath = pathArray[pathArray.length - 1];
+                    } else {
+                        // Root of collection
+                        if (collection === 'TEMP') fullPath = 'c:\\ZX\\TEMP'; // We should get this from config or API, but hardcoding for now or fetching roots first.
+                        // Actually, let's use the browse endpoint to get roots first, then filter.
+                        // Or, we can just use the /api/scan/FE etc endpoints? No, multicopy/browse is better.
+
+                        // Let's try: if path is empty, we ask for the collection root.
+                        // The backend `multicopy_browse` returns roots if path is ROOT.
+                        // We can just use the `full_path` from the item we clicked.
+                        // Initial load: we need the root path of the collection.
+                        // Let's assume we have the root paths available or we fetch them.
+                        // Actually, let's just use the `multicopy_browse` with the known root paths if we can.
+                        // But we don't know the root paths on frontend easily without fetching.
+
+                        // Alternative: The `multicopy_browse` endpoint handles `ROOT` to give us [FE, TS, TEMP].
+                        // We can fetch that once to get the base paths.
+                    }
+
+                    // Let's simplify: 
+                    // 1. When switching collection, we load the root of that collection.
+                    //    We can use the existing `feStructure` etc? No, `multicopy/browse` is for filesystem browsing.
+                    //    Let's use `multicopy/browse/ROOT` to get the 3 roots, then pick the one matching `collection`.
+
+                    if (pathArray.length === 0) {
+                        const r = await fetch(`${API_BASE}/multicopy/browse`);
+                        const d = await r.json();
+                        // d.items contains the roots. Find the one matching collection.
+                        const rootItem = d.items.find(i => i.name === `[${collection}]`);
+                        if (rootItem) {
+                            // Now load the contents of this root
+                            const r2 = await fetch(`${API_BASE}/multicopy/browse/${encodeURIComponent(rootItem.full_path)}`);
+                            const d2 = await r2.json();
+                            setMcSourceItems(d2.items || []);
+                            // We don't add root to path, we just show its contents.
+                        }
+                    } else {
+                        const lastPath = pathArray[pathArray.length - 1];
+                        const r = await fetch(`${API_BASE}/multicopy/browse/${encodeURIComponent(lastPath)}`);
+                        const d = await r.json();
+                        setMcSourceItems(d.items || []);
+                    }
+                } catch (e) { setError(e.message); }
+                finally { setMcLoading(false); }
+            };
+
+            const loadMcDestContents = async (collection, pathArray) => {
+                setMcLoading(true);
+                try {
+                    if (pathArray.length === 0) {
+                        const r = await fetch(`${API_BASE}/multicopy/browse`);
+                        const d = await r.json();
+                        const rootItem = d.items.find(i => i.name === `[${collection}]`);
+                        if (rootItem) {
+                            const r2 = await fetch(`${API_BASE}/multicopy/browse/${encodeURIComponent(rootItem.full_path)}`);
+                            const d2 = await r2.json();
+                            setMcDestItems(d2.items || []);
+                        }
+                    } else {
+                        const lastPath = pathArray[pathArray.length - 1];
+                        const r = await fetch(`${API_BASE}/multicopy/browse/${encodeURIComponent(lastPath)}`);
+                        const d = await r.json();
+                        setMcDestItems(d.items || []);
+                    }
+                } catch (e) { setError(e.message); }
+                finally { setMcLoading(false); }
+            };
+
+            const executeNewMulticopy = async () => {
+                if (mcSelectedFiles.length === 0) return;
+                
+                // Obtener la ruta completa del destino actual
+                let fullDestPath = '';
+                
+                if (mcDestPath.length > 0) {
+                    // Usamos la última ruta del breadcrumb (ruta completa)
+                    fullDestPath = mcDestPath[mcDestPath.length - 1];
+                } else {
+                    // Estamos en la raíz, necesitamos obtener el path base de la colección
+                    const r = await fetch(`${API_BASE}/multicopy/browse`);
+                    const d = await r.json();
+                    const rootItem = d.items.find(i => i.name === `[${mcDestCollection}]`);
+                    if (rootItem) {
+                        fullDestPath = rootItem.full_path;
+                    }
+                }
+
+                if (!fullDestPath) {
+                    setError('No se pudo determinar la ruta de destino');
+                    return;
+                }
+
                 setProcessing(true);
                 try {
-                    const r = await fetch(`${API_BASE}/multicopy`, {
+                    const r = await fetch(`${API_BASE}/multicopy/execute`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ files: multicopyFiles, destinations: multicopyDestinations })
+                        body: JSON.stringify({
+                            files: mcSelectedFiles,
+                            dest_collection: mcDestCollection,
+                            full_dest_path: fullDestPath
+                        })
                     });
                     const d = await r.json();
                     if (d.success) {
-                        setSuccess(`Copiados ${d.copied} archivos exitosamente`);
-                        setMulticopyFiles([]);
-                        setMulticopyDestinations([]);
+                        setSuccess(`Copiados ${d.copied} archivos.`);
+                        setMcSelectedFiles([]);
                     } else {
-                        setError(d.error);
+                        setError(d.error || 'Error al copiar');
                     }
-                } catch (e) {
-                    setError(e.message);
-                } finally {
-                    setProcessing(false);
-                }
+                } catch (e) { setError(e.message); }
+                finally { setProcessing(false); }
             };
+
+            // Initial load for multicopy
+            useEffect(() => {
+                if (activeTab === 'multicopy') {
+                    loadMcSourceContents(mcSourceCollection, mcSourcePath);
+                    loadMcDestContents(mcDestCollection, mcDestPath);
+                }
+            }, [activeTab, mcSourceCollection, mcSourcePath, mcDestCollection, mcDestPath]);
 
             const selectFolderForRule = () => {
                 const path = browserPath.join('/');
@@ -419,79 +713,197 @@
                                 <div className="w-96 flex flex-col gap-2">
                                     <div className="bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
                                     <div className="bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
-                                    <div className="bg-black/40 border border-green-500/30 rounded overflow-hidden flex flex-col" style={{ height: panelHeight }}><div className="px-2 py-1 flex items-center gap-1 border-b border-gray-700 bg-green-900/20"><Icon name="play" className="w-3 h-3 text-green-400" /><span className="text-xs font-bold text-green-400">Emulador</span></div><iframe id="emulator-iframe" src="https://torinak.com/qaop#128" className="w-full flex-1 border-0" allow="autoplay; fullscreen; gamepad" title="Emulator" /></div>
                                 </div>
                                 <div className="flex-1 flex bg-black/40 border border-purple-500/20 rounded overflow-hidden">
-                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}><div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs"><button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400">FE</button>{fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}{feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}<button onClick={refreshFE} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-1">{feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div> : fePath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta FE ←</div> : <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} />)}</div>}</div></div>
-                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}><div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs"><button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400">TS</button>{tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20">{s}</button></React.Fragment>))}{tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}<button onClick={refreshTS} className="ml-auto p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-1">{tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div> : tsPath.length === 0 ? <div className="text-center text-gray-500 py-8 text-xs">Selecciona carpeta TS ←</div> : <div className="space-y-0.5">{tsItems.map((item, idx) => <FileRow key={idx} item={item} collection="TS" onFolderClick={clickFolderTS} />)}</div>}</div></div>
+                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}>
+                                        <div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
+                                            <button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400 hover:underline">FE</button>
+                                            {fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
+                                            {feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}
+                                            <div className="ml-auto flex gap-1">
+                                                <button onClick={() => openNewFolderModal('FE')} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
+                                                {selectedFilesFE.length > 0 && <button onClick={() => deleteSelectedFiles('FE')} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${selectedFilesFE.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
+                                                <button onClick={refreshFE} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-1">
+                                            {feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div> : 
+                                            <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} isSelected={selectedFilesFE.includes(item.full_path)} onToggleSelect={toggleFileSelection} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
+                                        </div>
+                                        {selectedFilesFE.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{selectedFilesFE.length} archivo(s) seleccionado(s)</div>}
+                                    </div>
+                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}>
+                                        <div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
+                                            <button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400 hover:underline">TS</button>
+                                            {tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
+                                            {tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}
+                                            <div className="ml-auto flex gap-1">
+                                                <button onClick={() => openNewFolderModal('TS')} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
+                                                {selectedFilesTS.length > 0 && <button onClick={() => deleteSelectedFiles('TS')} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${selectedFilesTS.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
+                                                <button onClick={refreshTS} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-1">
+                                            {tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div> : 
+                                            <div className="space-y-0.5">{tsItems.map((item, idx) => <FileRow key={idx} item={item} collection="TS" onFolderClick={clickFolderTS} isSelected={selectedFilesTS.includes(item.full_path)} onToggleSelect={toggleFileSelection} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
+                                        </div>
+                                        {selectedFilesTS.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{selectedFilesTS.length} archivo(s) seleccionado(s)</div>}
+                                    </div>
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'temp' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><div className="flex justify-between items-center mb-3"><h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2><button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button></div><div className="space-y-1">{tempFiles.map((f, i) => (<div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2"><Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} /><div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{(f.size / 1024).toFixed(1)}KB</p></div>{isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded"><Icon name="play" className="w-3 h-3" /></button>}<button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded"><Icon name="copy" className="w-3 h-3" /></button><button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded"><Icon name="trash" className="w-3 h-3" /></button></div>))}</div></div>)}
 
-                        {activeTab === 'multicopy' && (<div className="h-full overflow-hidden flex flex-col bg-black/30 border border-purple-500/30 rounded p-3">
-                            <h2 className="font-bold mb-3 flex items-center gap-2"><Icon name="copy" className="w-4 h-4 text-blue-400" />Multicopia Flexible</h2>
-                            <div className="flex-1 flex gap-4 overflow-hidden">
-                                <div className="flex-1 flex flex-col bg-gray-800/30 rounded p-2 border border-gray-700">
-                                    <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-xs text-yellow-400">Archivos a Copiar ({multicopyFiles.length})</h3><div className="flex gap-1"><button onClick={() => { setFileBrowserCollection('TEMP'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('TEMP', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-yellow-600 rounded text-xs">+ TEMP</button><button onClick={() => { setFileBrowserCollection('FE'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('FE', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-blue-600 rounded text-xs">+ FE</button><button onClick={() => { setFileBrowserCollection('TS'); setFileBrowserPath([]); setFileSearchFilter(''); loadFileBrowserContents('TS', []); setShowFileBrowser(true); }} className="px-2 py-1 bg-cyan-600 rounded text-xs">+ TS</button></div></div>
-                                    <div className="flex-1 overflow-y-auto space-y-1">
-                                        {multicopyFiles.map((f, i) => (
-                                            <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-900/50 rounded text-xs">
-                                                <Icon name="file" className="w-3 h-3 text-gray-400" />
-                                                <span className="flex-1 truncate" title={f}>{f}</span>
-                                                <button onClick={() => { const nf = [...multicopyFiles]; nf.splice(i, 1); setMulticopyFiles(nf); }} className="text-red-400 hover:text-red-300">✕</button>
-                                            </div>
-                                        ))}
-                                        {multicopyFiles.length === 0 && <p className="text-gray-500 text-xs text-center py-4">Añade archivos desde cualquier ubicación</p>}
-                                    </div>
-                                    {multicopyFiles.length > 0 && <button onClick={() => setMulticopyFiles([])} className="mt-2 text-xs text-red-400 hover:text-red-300 self-end">Limpiar lista</button>}
-                                </div>
-                                <div className="flex items-center justify-center"><Icon name="arrow-right" className="w-6 h-6 text-gray-600" /></div>
-                                <div className="flex-1 flex flex-col bg-gray-800/30 rounded p-2 border border-gray-700">
-                                    <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-xs text-cyan-400">Destinos ({multicopyDestinations.length})</h3><button onClick={() => { setBrowserCollection('FE'); setBrowserPath([]); loadBrowserFolders('FE', ''); setShowFolderBrowser(true); }} className="px-2 py-1 bg-cyan-600 rounded text-xs">+ Añadir</button></div>
-                                    <div className="flex-1 overflow-y-auto space-y-1">
-                                        {multicopyDestinations.map((d, i) => (
-                                            <div key={i} className="flex items-center gap-2 p-1.5 bg-gray-900/50 rounded text-xs">
-                                                <Icon name="folder" className="w-3 h-3 text-cyan-400" />
-                                                <span className="flex-1 truncate" title={d}>{d}</span>
-                                                <button onClick={() => { const nd = [...multicopyDestinations]; nd.splice(i, 1); setMulticopyDestinations(nd); }} className="text-red-400 hover:text-red-300">✕</button>
-                                            </div>
-                                        ))}
-                                        {multicopyDestinations.length === 0 && <p className="text-gray-500 text-xs text-center py-4">Añade carpetas de destino</p>}
-                                    </div>
-                                    {multicopyDestinations.length > 0 && <button onClick={() => setMulticopyDestinations([])} className="mt-2 text-xs text-red-400 hover:text-red-300 self-end">Limpiar lista</button>}
-                                </div>
-                            </div>
-                            <div className="mt-3 flex justify-end">
-                                <button onClick={executeMulticopy} disabled={multicopyFiles.length === 0 || multicopyDestinations.length === 0} className={`px-4 py-2 rounded font-bold text-sm flex items-center gap-2 ${multicopyFiles.length > 0 && multicopyDestinations.length > 0 ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}><Icon name="copy" className="w-4 h-4" /> Copiar {multicopyFiles.length} archivos a {multicopyDestinations.length} destinos</button>
-                            </div>
-                        </div>)}
-
                         {activeTab === 'compress' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="archive" className="w-5 h-5 text-orange-400" />Comprimir TOSEC</h2><div className="space-y-4 max-w-xl"><div><label className="block text-sm mb-1">Colección</label><div className="flex gap-2"><button onClick={() => setCompressCollection('FE')} className={`px-4 py-2 rounded ${compressCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE</button><button onClick={() => setCompressCollection('TS')} className={`px-4 py-2 rounded ${compressCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS</button></div></div><div><label className="block text-sm mb-1">Destino</label><input type="text" value={compressDestPath} onChange={(e) => setCompressDestPath(e.target.value)} className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded" /></div><div><label className="block text-sm mb-1">Tamaño volumen</label><div className="flex gap-2"><button onClick={() => setCompressVolumeSize(2048)} className={`px-4 py-2 rounded ${compressVolumeSize === 2048 ? 'bg-purple-600' : 'bg-gray-700'}`}>2 GB (FAT32)</button><button onClick={() => setCompressVolumeSize(4096)} className={`px-4 py-2 rounded ${compressVolumeSize === 4096 ? 'bg-purple-600' : 'bg-gray-700'}`}>4 GB (DVD)</button></div></div><div><label className="block text-sm mb-1">Formato</label><div className="flex gap-2">{['zip', '7z'].map(f => (<button key={f} onClick={() => setCompressFormat(f)} className={`px-3 py-1 rounded ${compressFormat === f ? 'bg-purple-600' : 'bg-gray-700'}`}>{f.toUpperCase()}</button>))}</div></div>
-                            {compressProgress && (<div className="p-3 bg-gray-800/50 rounded border border-gray-700"><div className="flex justify-between text-sm mb-2"><span className="text-gray-300">{compressProgress.progress}</span><span className="text-cyan-400 font-bold">{compressProgress.percent}%</span></div><div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-purple-500 to-cyan-500 h-4 rounded-full transition-all duration-300 flex items-center justify-center" style={{width: `${compressProgress.percent}%`}}><span className="text-xs text-white font-bold drop-shadow">{compressProgress.percent > 5 ? `${compressProgress.percent}%` : ''}</span></div></div></div>)}
+                            {compressProgress && (<div className="p-3 bg-gray-800/50 rounded border border-gray-700"><div className="flex justify-between text-sm mb-2"><span className="text-gray-300">{compressProgress.progress}</span><span className="text-cyan-400 font-bold">{compressProgress.percent}%</span></div><div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-purple-500 to-cyan-500 h-4 rounded-full transition-all duration-300 flex items-center justify-center" style={{ width: `${compressProgress.percent}%` }}><span className="text-xs text-white font-bold drop-shadow">{compressProgress.percent > 5 ? `${compressProgress.percent}%` : ''}</span></div></div></div>)}
                             <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Comprimir'}</button></div></div>)}
 
-                        {
-                            activeTab === 'nas' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup NAS - revisteo.synology.me</h2><div className="grid grid-cols-2 gap-4">
-                                {/* Archivos locales */}
-                                <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><div className="flex justify-between items-center mb-2"><h3 className="font-semibold text-sm">C:\ZX\Backups\</h3><div className="flex gap-1"><button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs">🔄</button><button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button><button onClick={deselectAllBackupFiles} className="px-2 py-1 bg-gray-600 rounded text-xs">Ninguno</button></div></div><div className="max-h-64 overflow-y-auto space-y-1">{backupFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-4">Sin archivos</p> : backupFiles.map((f, i) => (<label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50"><input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} /><Icon name="archive" className="w-4 h-4 text-orange-400" /><span className="flex-1 truncate text-sm">{f.name}</span><span className="text-xs text-gray-400">{formatSize(f.size)}</span></label>))}</div>{selectedBackupFiles.length > 0 && <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} seleccionados ({formatSize(backupFiles.filter(f => selectedBackupFiles.includes(f.name)).reduce((a, b) => a + b.size, 0))})</p>}</div>
+                        {activeTab === 'multicopy' && (
+                            <div className="h-full flex flex-col bg-black/30 border border-purple-500/30 rounded p-3 overflow-hidden">
+                                <h2 className="font-bold mb-3 flex items-center gap-2"><Icon name="copy" className="w-4 h-4 text-blue-400" />Multicopia v2</h2>
+                                <div className="flex-1 flex gap-4 overflow-hidden">
+                                    {/* Source Column */}
+                                    <div className="flex-1 flex flex-col bg-gray-800/30 rounded border border-gray-700 overflow-hidden">
+                                        <div className="p-2 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
+                                            <div className="flex gap-1">
+                                                {['TEMP', 'FE', 'TS'].map(c => (
+                                                    <button key={c} onClick={() => { setMcSourceCollection(c); setMcSourcePath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcSourceCollection === c ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c}</button>
+                                                ))}
+                                            </div>
+                                            <span className="text-xs text-gray-400">{mcSourceItems.length} items</span>
+                                        </div>
+                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap">
+                                            <button onClick={() => setMcSourcePath([])} className="text-blue-400 font-bold hover:underline">ROOT</button>
+                                            {mcSourcePath.map((p, i) => (
+                                                <React.Fragment key={i}>
+                                                    <span className="text-gray-600">/</span>
+                                                    <button onClick={() => { const newPath = mcSourcePath.slice(0, i + 1); setMcSourcePath(newPath); }} className="text-gray-300 hover:text-white truncate max-w-[100px]" title={p}>{p.split(/[/\\]/).pop()}</button>
+                                                </React.Fragment>
+                                            ))}
+                                            {mcSourcePath.length > 0 && <button onClick={() => { const newPath = mcSourcePath.slice(0, -1); setMcSourcePath(newPath); }} className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded hover:bg-gray-600">⬆</button>}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
+                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-6 h-6 text-blue-400 animate-spin" /></div> :
+                                                (mcSourceItems || []).map((item, i) => {
+                                                    if (!item) return null;
+                                                    return (
+                                                        <div key={i} onClick={() => {
+                                                            if (item.type === 'folder') {
+                                                                setMcSourcePath([...mcSourcePath, item.full_path]);
+                                                            } else {
+                                                                // Toggle selection
+                                                                if (mcSelectedFiles.includes(item.full_path)) {
+                                                                    setMcSelectedFiles(mcSelectedFiles.filter(f => f !== item.full_path));
+                                                                } else {
+                                                                    setMcSelectedFiles([...mcSelectedFiles, item.full_path]);
+                                                                }
+                                                            }
+                                                        }} className={`p-1.5 rounded text-xs flex items-center gap-2 cursor-pointer ${mcSelectedFiles.includes(item.full_path) ? 'bg-blue-900/50 border border-blue-500/50' : 'hover:bg-gray-700/50 border border-transparent'}`}>
+                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
+                                                            <span className="truncate flex-1">{item.name || 'Unknown'}</span>
+                                                            {item.type === 'file' && <span className="text-gray-500">{item.size ? (item.size / 1024).toFixed(0) : '0'}KB</span>}
+                                                        </div>
+                                                    );
+                                                })}
+                                        </div>
+                                        {/* Selected Files Area */}
+                                        <div className="h-32 border-t border-gray-700 bg-gray-900/30 flex flex-col">
+                                            <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                                                <span className="text-xs font-bold text-yellow-400">Seleccionados ({mcSelectedFiles.length})</span>
+                                                {mcSelectedFiles.length > 0 && <button onClick={() => setMcSelectedFiles([])} className="text-xs text-red-400 hover:text-red-300">Limpiar</button>}
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
+                                                {mcSelectedFiles.map((f, i) => (
+                                                    <div key={i} className="flex justify-between items-center p-1 bg-gray-800/50 rounded text-xs group">
+                                                        <span className="truncate flex-1 text-gray-300" title={f}>{f.split(/[/\\]/).pop()}</span>
+                                                        <button onClick={() => setMcSelectedFiles(mcSelectedFiles.filter(x => x !== f))} className="text-red-500 opacity-0 group-hover:opacity-100 px-1">✕</button>
+                                                    </div>
+                                                ))}
+                                                {mcSelectedFiles.length === 0 && <div className="text-center text-gray-600 text-xs py-4">Selecciona archivos arriba</div>}
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                {/* Conexión FTP */}
-                                <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3><div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-2 text-xs"><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Servidor:</span> <span className="text-cyan-400">revisteo.synology.me</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Usuario:</span> <span className="text-green-400">Flunky</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Carpeta:</span> <span className="text-yellow-400">/ZxTosec</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Protocolo:</span> <span className="text-purple-400">FTPS</span></div></div>
-                                    <div><label className="block text-xs text-gray-400 mb-1">Contraseña</label><div className="flex gap-2"><input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded" /><button onClick={testFtpConnection} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Probar conexión"><Icon name="wifi" className="w-4 h-4" /></button></div></div>
-                                    {connectionStatus && (<div className={`p-2 rounded text-xs ${connectionStatus.status === 'ok' ? 'bg-green-900/30 border border-green-500/30 text-green-300' : connectionStatus.status === 'error' ? 'bg-red-900/30 border border-red-500/30 text-red-300' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300'}`}>{connectionStatus.message}</div>)}
-                                    {currentUploadFile && (<div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded text-xs"><p className="text-blue-300 mb-1">Subiendo {currentUploadFile.index}/{currentUploadFile.total}</p><p className="text-white font-medium truncate">{currentUploadFile.name}</p><p className="text-gray-400">{formatSize(currentUploadFile.size)}</p></div>)}
-                                    {uploadProgress.length > 0 && (<div className="max-h-32 overflow-y-auto space-y-1">{uploadProgress.map((p, i) => (<div key={i} className={`p-1 rounded text-xs flex items-center gap-2 ${p.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}><span className={p.success ? 'text-green-400' : 'text-red-400'}>{p.success ? '✓' : '✗'}</span><span className="truncate flex-1">{p.filename}</span>{p.success && <span className="text-gray-400">{p.speed} MB/s</span>}{!p.success && <span className="text-red-400 text-xs">{p.error}</span>}</div>))}</div>)}
-                                    <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0} className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>{uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}{uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}</button>
-                                </div></div>
-                            </div></div>)
+                                    {/* Arrow */}
+                                    <div className="flex flex-col justify-center items-center gap-2">
+                                        <Icon name="arrow-right" className="w-6 h-6 text-gray-500" />
+                                    </div>
+
+                                    {/* Destination Column */}
+                                    <div className="flex-1 flex flex-col bg-gray-800/30 rounded border border-gray-700 overflow-hidden">
+                                        <div className="p-2 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
+                                            <div className="flex gap-1">
+                                                {['FE', 'TS'].map(c => (
+                                                    <button key={c} onClick={() => { setMcDestCollection(c); setMcDestPath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcDestCollection === c ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c}</button>
+                                                ))}
+                                            </div>
+                                            <span className="text-xs text-gray-400">Destino</span>
+                                        </div>
+                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap">
+                                            <button onClick={() => setMcDestPath([])} className="text-cyan-400 font-bold hover:underline">ROOT</button>
+                                            {mcDestPath.map((p, i) => (
+                                                <React.Fragment key={i}>
+                                                    <span className="text-gray-600">/</span>
+                                                    <button onClick={() => { const newPath = mcDestPath.slice(0, i + 1); setMcDestPath(newPath); }} className="text-gray-300 hover:text-white truncate max-w-[100px]" title={p}>{p.split(/[/\\]/).pop()}</button>
+                                                </React.Fragment>
+                                            ))}
+                                            {mcDestPath.length > 0 && <button onClick={() => { const newPath = mcDestPath.slice(0, -1); setMcDestPath(newPath); }} className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded hover:bg-gray-600">⬆</button>}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
+                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-6 h-6 text-cyan-400 animate-spin" /></div> :
+                                                (mcDestItems || []).map((item, i) => {
+                                                    if (!item) return null;
+                                                    return (
+                                                        <div key={i} onClick={() => {
+                                                            if (item.type === 'folder') {
+                                                                setMcDestPath([...mcDestPath, item.full_path]);
+                                                            }
+                                                        }} className={`p-1.5 rounded text-xs flex items-center gap-2 ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-700/50' : 'opacity-50'}`}>
+                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 ${item.type === 'folder' ? 'text-cyan-400' : 'text-gray-600'}`} />
+                                                            <span className="truncate flex-1">{item.name || 'Unknown'}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                        </div>
+                                        <div className="p-2 bg-gray-900/50 border-t border-gray-700">
+                                            <div className="text-xs text-gray-400 mb-1">Carpeta destino actual:</div>
+                                            <div className="text-xs font-mono bg-black/30 p-1.5 rounded border border-gray-700 truncate text-cyan-300">
+                                                {mcDestPath.length > 0 ? mcDestPath[mcDestPath.length - 1] : `[Raíz de ${mcDestCollection}]`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-3 flex justify-end">
+                                    <button onClick={executeNewMulticopy} disabled={mcSelectedFiles.length === 0 || processing} className={`px-6 py-2 rounded font-bold text-sm flex items-center gap-2 ${mcSelectedFiles.length > 0 && !processing ? 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-900/20' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+                                        {processing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="copy" className="w-4 h-4" />}
+                                        {processing ? 'Copiando...' : `Copiar ${mcSelectedFiles.length} archivos`}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'nas' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup NAS - revisteo.synology.me</h2><div className="grid grid-cols-2 gap-4">
+                            {/* Archivos locales */}
+                            <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><div className="flex justify-between items-center mb-2"><h3 className="font-semibold text-sm">C:\ZX\Backups\</h3><div className="flex gap-1"><button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs">🔄</button><button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button><button onClick={deselectAllBackupFiles} className="px-2 py-1 bg-gray-600 rounded text-xs">Ninguno</button></div></div><div className="max-h-64 overflow-y-auto space-y-1">{backupFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-4">Sin archivos</p> : backupFiles.map((f, i) => (<label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50"><input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} /><Icon name="archive" className="w-4 h-4 text-orange-400" /><span className="flex-1 truncate text-sm">{f.name}</span><span className="text-xs text-gray-400">{formatSize(f.size)}</span></label>))}</div>{selectedBackupFiles.length > 0 && <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} seleccionados ({formatSize(backupFiles.filter(f => selectedBackupFiles.includes(f.name)).reduce((a, b) => a + b.size, 0))})</p>}</div>
+
+                            {/* Conexión FTP */}
+                            <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3><div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-2 text-xs"><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Servidor:</span> <span className="text-cyan-400">revisteo.synology.me</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Usuario:</span> <span className="text-green-400">Flunky</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Carpeta:</span> <span className="text-yellow-400">/ZxTosec</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Protocolo:</span> <span className="text-purple-400">FTPS</span></div></div>
+                                <div><label className="block text-xs text-gray-400 mb-1">Contraseña</label><div className="flex gap-2"><input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded" /><button onClick={testFtpConnection} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Probar conexión"><Icon name="wifi" className="w-4 h-4" /></button></div></div>
+                                {connectionStatus && (<div className={`p-2 rounded text-xs ${connectionStatus.status === 'ok' ? 'bg-green-900/30 border border-green-500/30 text-green-300' : connectionStatus.status === 'error' ? 'bg-red-900/30 border border-red-500/30 text-red-300' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300'}`}>{connectionStatus.message}</div>)}
+                                {currentUploadFile && (<div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded text-xs"><p className="text-blue-300 mb-1">Subiendo {currentUploadFile.index}/{currentUploadFile.total}</p><p className="text-white font-medium truncate">{currentUploadFile.name}</p><p className="text-gray-400">{formatSize(currentUploadFile.size)}</p></div>)}
+                                {uploadProgress.length > 0 && (<div className="max-h-32 overflow-y-auto space-y-1">{uploadProgress.map((p, i) => (<div key={i} className={`p-1 rounded text-xs flex items-center gap-2 ${p.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}><span className={p.success ? 'text-green-400' : 'text-red-400'}>{p.success ? '✓' : '✗'}</span><span className="truncate flex-1">{p.filename}</span>{p.success && <span className="text-gray-400">{p.speed} MB/s</span>}{!p.success && <span className="text-red-400 text-xs">{p.error}</span>}</div>))}</div>)}
+                                <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0} className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>{uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}{uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}</button>
+                            </div></div>
+                        </div></div>)
                         }
                     </div >
 
                     {showProcessModal && selectedFile && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-2xl w-full max-h-[70vh] flex flex-col"><div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}>✕</button></div><div className="flex-1 overflow-y-auto p-3">{['FE', 'TS'].map(col => (<div key={col} className="mb-2 border border-gray-700 rounded p-2"><h4 className="font-semibold text-xs mb-1">{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} /><span>{p}</span></label>))}</div></div>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div></div></div>)}
                     {showFolderBrowser && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col"><div className="p-3 border-b border-purple-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold">Seleccionar destino</h3><button onClick={() => setShowFolderBrowser(false)}>✕</button></div><div className="flex gap-1">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setBrowserCollection(c); setBrowserPath([]); loadBrowserFolders(c, ''); }} className={`px-2 py-1 rounded text-xs ${browserCollection === c ? 'bg-purple-600' : 'bg-gray-700'}`}>{c}</button>))}</div></div><div className="px-3 py-1 bg-gray-800/50 text-xs"><button onClick={() => { setBrowserPath([]); loadBrowserFolders(browserCollection, ''); }} className="text-purple-400">{browserCollection}:/</button>{browserPath.map((s, i) => (<button key={i} onClick={() => { const np = browserPath.slice(0, i + 1); setBrowserPath(np); loadBrowserFolders(browserCollection, np.join('/')); }} className="text-purple-400">{s}/</button>))}</div><div className="flex-1 overflow-y-auto p-2 space-y-1">{browserFolders.map((f, i) => (<button key={i} onClick={() => { setBrowserPath([...browserPath, f.name]); loadBrowserFolders(browserCollection, [...browserPath, f.name].join('/')); }} className="w-full p-2 bg-gray-800/50 rounded hover:bg-gray-700/50 text-left text-xs flex items-center gap-2"><Icon name="folder" className="w-3 h-3 text-cyan-400" />{f.name}{f.has_subfolders && <span className="ml-auto text-gray-500">→</span>}</button>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-between"><span className="text-xs bg-gray-800 px-2 py-1 rounded">{browserCollection}:{browserPath.join('/')}</span><div className="flex gap-1"><button onClick={() => setShowFolderBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={selectFolderForRule} className="px-2 py-1 bg-green-600 rounded text-xs">OK</button></div></div></div></div>)}
+
+                    {showNewFolderModal && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded p-4 w-96"><div className="flex justify-between mb-4"><h3 className="font-bold flex items-center gap-2"><Icon name="plus" className="w-4 h-4 text-green-400" />Nueva carpeta en {newFolderCollection}</h3><button onClick={() => setShowNewFolderModal(false)}>✕</button></div><p className="text-xs text-gray-400 mb-2">Ruta: {newFolderCollection}:/{(newFolderCollection === 'FE' ? fePath : tsPath).join('/')}/</p><input type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createNewFolder()} placeholder="Nombre de la carpeta" className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-4" autoFocus /><div className="flex justify-end gap-2"><button onClick={() => setShowNewFolderModal(false)} className="px-3 py-1.5 bg-gray-700 rounded text-sm">Cancelar</button><button onClick={createNewFolder} disabled={!newFolderName.trim()} className={`px-3 py-1.5 rounded text-sm ${newFolderName.trim() ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 cursor-not-allowed'}`}>Crear</button></div></div></div>)}
                     {showFileBrowser && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-yellow-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col"><div className="p-3 border-b border-yellow-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold text-yellow-400">Seleccionar archivo(s)</h3><button onClick={() => setShowFileBrowser(false)}>✕</button></div>{fileBrowserCollection !== 'TEMP' && <div className="flex gap-1 mb-2">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setFileBrowserCollection(c); setFileBrowserPath([]); loadFileBrowserContents(c, []); }} className={`px-2 py-1 rounded text-xs ${fileBrowserCollection === c ? 'bg-yellow-600' : 'bg-gray-700'}`}>{c}</button>))}</div>}{fileBrowserCollection !== 'TEMP' && <div className="px-2 py-1 bg-gray-800/50 text-xs mb-2"><button onClick={() => { setFileBrowserPath([]); loadFileBrowserContents(fileBrowserCollection, []); }} className="text-yellow-400">{fileBrowserCollection}:/</button>{fileBrowserPath.map((s, i) => (<button key={i} onClick={() => { const np = fileBrowserPath.slice(0, i + 1); setFileBrowserPath(np); loadFileBrowserContents(fileBrowserCollection, np); }} className="text-yellow-400">{s}/</button>))}</div>}<input type="text" value={fileSearchFilter} onChange={(e) => setFileSearchFilter(e.target.value)} placeholder="Filtrar..." className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs" /></div><div className="flex-1 overflow-y-auto p-2 space-y-1">{fileBrowserItems.filter(it => !fileSearchFilter || it.name.toLowerCase().includes(fileSearchFilter.toLowerCase())).map((item, i) => (<button key={i} onClick={() => { if (item.type === 'folder') { setFileBrowserPath([...fileBrowserPath, item.name]); loadFileBrowserContents(fileBrowserCollection, [...fileBrowserPath, item.name]); } else { selectFileForRule(item); } }} className="w-full p-2 bg-gray-800/50 rounded hover:bg-gray-700/50 text-left text-xs flex items-center gap-2"><Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3 h-3 ${item.type === 'folder' ? 'text-cyan-400' : 'text-yellow-400'}`} />{item.name}{item.type === 'folder' && <span className="ml-auto text-gray-500">→</span>}</button>))}</div><div className="p-3 border-t flex justify-end"><button onClick={() => setShowFileBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cerrar</button></div></div></div>)}
                 </div >
             );
