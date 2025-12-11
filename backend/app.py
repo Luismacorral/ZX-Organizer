@@ -2,6 +2,7 @@ from flask import Flask, jsonify, send_from_directory, request, Response
 from flask_cors import CORS
 from urllib.parse import quote
 import os
+import sys
 import csv
 import subprocess
 import platform
@@ -11,15 +12,22 @@ import time
 import threading
 from scanner import DirectoryScanner
 
-app = Flask(__name__, static_folder='../frontend', static_url_path='')
+# Determinar el directorio base (donde está app.py = backend/)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Frontend está en ../frontend/
+FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), 'frontend')
+
+app = Flask(__name__)
 CORS(app)
 
+# Configuración - usa variables de entorno si están disponibles, sino valores por defecto
 CONFIG = {
-    'FE_PATH': r'c:\ZX\ZX_v41_FE',
-    'TS_PATH': r'c:\ZX\ZX_v41_TS',
-    'TEMP_PATH': r'c:\ZX\TEMP',
-    'TS_TOSEC_SUBPATH': 'TOSEC_v41',
-    'BACKUP_PATH': r'C:\ZX\Backups'
+    'FE_PATH': os.environ.get('ZX_FE_PATH', r'c:\ZX\ZX_v41_FE'),
+    'TS_PATH': os.environ.get('ZX_TS_PATH', r'c:\ZX\ZX_v41_TS'),
+    'TEMP_PATH': os.environ.get('ZX_TEMP_PATH', r'c:\ZX\TEMP'),
+    'TS_TOSEC_SUBPATH': os.environ.get('ZX_TS_TOSEC_SUBPATH', 'TOSEC_v41'),
+    'BACKUP_PATH': os.environ.get('ZX_BACKUP_PATH', r'C:\ZX\Backups'),
+    'UPDATES_TOSEC_PATH': os.environ.get('ZX_UPDATES_TOSEC_PATH', r'C:\ZX\UPDATES_TOSEC')
 }
 
 cache = {'FE': None, 'TS': None, 'TEMP': None, 'stats': None}
@@ -27,17 +35,21 @@ scanner = DirectoryScanner(CONFIG)
 
 # Estado global para compresión
 compress_status = {'running': False, 'progress': '', 'percent': 0, 'done': False, 'error': None}
+compress_cancel_flag = False
+compress_process = None
 
 def get_collection_base_path(collection):
     if collection == 'FE':
         return CONFIG['FE_PATH']
     elif collection == 'TS':
         return os.path.join(CONFIG['TS_PATH'], CONFIG['TS_TOSEC_SUBPATH'])
+    elif collection == 'UPD':
+        return CONFIG.get('UPDATES_TOSEC_PATH', r'C:\ZX\UPDATES_TOSEC')
     return None
 
 @app.route('/')
 def index():
-    return send_from_directory('../frontend', 'index.html')
+    return send_from_directory(FRONTEND_DIR, 'index.html')
 
 @app.route('/api/config')
 def get_config():
@@ -104,6 +116,58 @@ def scan_temp():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/temp/preview', methods=['POST'])
+def preview_temp_copy():
+    """
+    Muestra vista previa de los destinos antes de copiar a FE/TS real.
+    Solo procesa archivos TOSEC válidos (sin .zip, .rar, etc.)
+    """
+    data = request.get_json()
+    target_collection = data.get('target_collection', 'TS')
+    
+    temp_path = CONFIG.get('TEMP_PATH', '')
+    if not temp_path or not os.path.exists(temp_path):
+        return jsonify({'success': False, 'error': 'Carpeta TEMP no existe'})
+    
+    files_preview = []
+    
+    for filename in os.listdir(temp_path):
+        file_path = os.path.join(temp_path, filename)
+        if not os.path.isfile(file_path):
+            continue
+        
+        ext = os.path.splitext(filename)[1].lower()
+        # Solo procesar archivos TOSEC válidos (sin .zip ni otros comprimidos)
+        if ext not in scanner.TOSEC_EXTENSIONS:
+            continue
+        
+        try:
+            tosec_info = scanner._parse_tosec_filename(filename)
+            suggested_paths = scanner._suggest_destination(tosec_info, ext, filename)
+            paths_for_collection = suggested_paths.get(target_collection, [])
+            
+            files_preview.append({
+                'filename': filename,
+                'tosec_info': tosec_info,
+                'dest_paths': paths_for_collection,
+                'has_destinations': len(paths_for_collection) > 0
+            })
+        except Exception as e:
+            files_preview.append({
+                'filename': filename,
+                'tosec_info': None,
+                'dest_paths': [],
+                'has_destinations': False,
+                'error': str(e)
+            })
+    
+    return jsonify({
+        'success': True,
+        'files': files_preview,
+        'target_collection': target_collection,
+        'total_files': len(files_preview)
+    })
+
 @app.route('/api/temp/delete', methods=['POST'])
 def delete_temp_file():
     data = request.get_json()
@@ -118,6 +182,79 @@ def delete_temp_file():
         return jsonify(result), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/temp/copy', methods=['POST'])
+def copy_temp_to_collection():
+    """
+    Copia archivos de TEMP a FE/TS usando las rutas sugeridas.
+    Solo procesa archivos TOSEC válidos (sin .zip, .rar, etc.)
+    """
+    data = request.get_json()
+    target_collection = data.get('target_collection', 'TS')
+    
+    temp_path = CONFIG.get('TEMP_PATH', '')
+    if not temp_path or not os.path.exists(temp_path):
+        return jsonify({'success': False, 'error': 'Carpeta TEMP no existe'})
+    
+    base_path = get_collection_base_path(target_collection)
+    if not base_path:
+        return jsonify({'success': False, 'error': f'Colección {target_collection} no configurada'})
+    
+    results = []
+    
+    for filename in os.listdir(temp_path):
+        file_path = os.path.join(temp_path, filename)
+        if not os.path.isfile(file_path):
+            continue
+        
+        ext = os.path.splitext(filename)[1].lower()
+        # Solo procesar archivos TOSEC válidos (sin .zip ni otros comprimidos)
+        if ext not in scanner.TOSEC_EXTENSIONS:
+            continue
+        
+        try:
+            tosec_info = scanner._parse_tosec_filename(filename)
+            suggested_paths = scanner._suggest_destination(tosec_info, ext, filename)
+            paths_for_collection = suggested_paths.get(target_collection, [])
+            
+            if not paths_for_collection:
+                results.append({
+                    'filename': filename,
+                    'success': False,
+                    'error': 'Sin destinos sugeridos'
+                })
+                continue
+            
+            copied_to = []
+            for dest_subpath in paths_for_collection:
+                full_dest = os.path.join(base_path, dest_subpath)
+                os.makedirs(os.path.dirname(full_dest), exist_ok=True)
+                shutil.copy2(file_path, full_dest)
+                copied_to.append(dest_subpath)
+            
+            results.append({
+                'filename': filename,
+                'success': True,
+                'dest_paths': copied_to
+            })
+            
+        except Exception as e:
+            results.append({
+                'filename': filename,
+                'success': False,
+                'error': str(e)
+            })
+    
+    # Invalidar caches
+    cache['FE'] = None
+    cache['TS'] = None
+    
+    return jsonify({
+        'success': True,
+        'results': results,
+        'total': len(results),
+        'copied': sum(1 for r in results if r.get('success'))
+    })
 
 @app.route('/api/open-file', methods=['POST'])
 def open_file():
@@ -173,15 +310,68 @@ def copy_between_collections():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/copy-folder', methods=['POST'])
+def copy_folder_between_collections():
+    """Copia una carpeta completa entre colecciones"""
+    data = request.get_json()
+    source_path = data.get('source_path')
+    dest_collection = data.get('dest_collection')
+    dest_folder = data.get('dest_folder', '')
+    folder_name = data.get('folder_name')
+    
+    if not source_path or not dest_collection or not os.path.isdir(source_path):
+        return jsonify({'error': 'Parámetros inválidos o carpeta no existe'}), 400
+    
+    try:
+        dest_base = get_collection_base_path(dest_collection)
+        if not dest_base:
+            return jsonify({'error': f'Colección {dest_collection} no configurada'}), 400
+        
+        # Construir ruta destino
+        if dest_folder:
+            dest_full = os.path.join(dest_base, dest_folder, folder_name)
+        else:
+            dest_full = os.path.join(dest_base, folder_name)
+        
+        # Si ya existe, sobrescribir contenido
+        if os.path.exists(dest_full):
+            # Copiar sobrescribiendo archivos existentes
+            files_copied = 0
+            for root, dirs, files in os.walk(source_path):
+                rel_path = os.path.relpath(root, source_path)
+                dest_dir = os.path.join(dest_full, rel_path) if rel_path != '.' else dest_full
+                os.makedirs(dest_dir, exist_ok=True)
+                
+                for file in files:
+                    src_file = os.path.join(root, file)
+                    dst_file = os.path.join(dest_dir, file)
+                    shutil.copy2(src_file, dst_file)  # Siempre sobrescribe
+                    files_copied += 1
+        else:
+            # Copiar carpeta completa
+            shutil.copytree(source_path, dest_full)
+            files_copied = sum(len(files) for _, _, files in os.walk(dest_full))
+        
+        cache['FE'] = None
+        cache['TS'] = None
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Carpeta copiada: {folder_name}',
+            'files_copied': files_copied
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/multicopy/execute', methods=['POST'])
 def multicopy_execute():
     data = request.get_json()
     files = data.get('files', [])  # list of source file paths (absolute or relative to TEMP)
-    dest_collection = data.get('dest_collection')  # 'FE' or 'TS'
+    dest_collection = data.get('dest_collection')  # 'FE', 'TS' or 'UPD'
     dest_path = data.get('dest_path', '')  # subfolder relativo O ruta absoluta
     full_dest_path_param = data.get('full_dest_path')  # ruta absoluta directa (opcional)
 
-    if not files or dest_collection not in ['FE', 'TS']:
+    if not files or dest_collection not in ['FE', 'TS', 'UPD']:
         return jsonify({'error': 'Faltan archivos o colección destino inválida'}), 400
 
     print(f"[MULTICOPY] files={files}")
@@ -206,8 +396,14 @@ def multicopy_execute():
         print(f"[MULTICOPY] Calculando ruta: {full_dest_path}")
 
     # Verificar que la ruta está dentro de las colecciones permitidas
-    allowed_roots = [CONFIG['FE_PATH'], os.path.join(CONFIG['TS_PATH'], CONFIG['TS_TOSEC_SUBPATH'])]
-    is_allowed = any(full_dest_path.startswith(root) for root in allowed_roots)
+    allowed_roots = [
+        CONFIG['FE_PATH'], 
+        os.path.join(CONFIG['TS_PATH'], CONFIG['TS_TOSEC_SUBPATH']),
+        CONFIG.get('UPDATES_TOSEC_PATH', '')
+    ]
+    allowed_roots = [os.path.normpath(r).lower() for r in allowed_roots if r]  # Normalizar y filtrar
+    full_dest_normalized = os.path.normpath(full_dest_path).lower()
+    is_allowed = any(full_dest_normalized.startswith(root) for root in allowed_roots)
     if not is_allowed:
         return jsonify({'error': f'Ruta destino no permitida: {full_dest_path}'}), 403
 
@@ -330,7 +526,8 @@ def compress_start():
     compress_status = {'running': True, 'progress': 'Iniciando...', 'percent': 0, 'done': False, 'error': None}
     
     def run_compression():
-        global compress_status
+        global compress_status, compress_cancel_flag, compress_process
+        compress_cancel_flag = False
         try:
             # Buscar 7-Zip
             seven_zip_paths = [
@@ -354,6 +551,10 @@ def compress_start():
             total_size = 0
             file_count = 0
             for root, dirs, files in os.walk(source_path):
+                if compress_cancel_flag:
+                    compress_status['error'] = 'Cancelado por el usuario'
+                    compress_status['running'] = False
+                    return
                 for f in files:
                     try:
                         total_size += os.path.getsize(os.path.join(root, f))
@@ -392,7 +593,7 @@ def compress_start():
             compress_status['progress'] = f'Comprimiendo {archive_name}...'
             
             # Ejecutar con captura de salida - desde el directorio padre para incluir carpeta raíz
-            process = subprocess.Popen(
+            compress_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -402,7 +603,20 @@ def compress_start():
             )
             
             # Parsear progreso
-            for line in process.stdout:
+            for line in compress_process.stdout:
+                if compress_cancel_flag:
+                    compress_process.terminate()
+                    compress_status['error'] = 'Cancelado por el usuario'
+                    compress_status['running'] = False
+                    compress_process = None
+                    # Limpiar archivos temporales/parciales
+                    try:
+                        for tmp_file in os.listdir(dest_path):
+                            if tmp_file.startswith(archive_name):
+                                os.remove(os.path.join(dest_path, tmp_file))
+                    except:
+                        pass
+                    return
                 line = line.strip()
                 if '%' in line:
                     try:
@@ -416,20 +630,30 @@ def compress_start():
                     except:
                         pass
             
-            process.wait()
+            compress_process.wait()
             
-            if process.returncode == 0:
+            if compress_cancel_flag:
+                compress_status['error'] = 'Cancelado por el usuario'
+                # Limpiar archivos temporales/parciales
+                try:
+                    for tmp_file in os.listdir(dest_path):
+                        if tmp_file.startswith(archive_name):
+                            os.remove(os.path.join(dest_path, tmp_file))
+                except:
+                    pass
+            elif compress_process.returncode == 0:
                 # Contar volúmenes creados
                 volumes = [f for f in os.listdir(dest_path) if f.startswith(archive_name) and (f'.{ext}' in f)]
                 compress_status['progress'] = f'¡Completado! {len(volumes)} volumen(es) de {archive_name}'
                 compress_status['percent'] = 100
                 compress_status['done'] = True
             else:
-                compress_status['error'] = f'Error en 7-Zip (código {process.returncode})'
+                compress_status['error'] = f'Error en 7-Zip (código {compress_process.returncode})'
         except Exception as e:
             compress_status['error'] = str(e)
         finally:
             compress_status['running'] = False
+            compress_process = None
     
     # Ejecutar en thread separado
     thread = threading.Thread(target=run_compression)
@@ -441,6 +665,18 @@ def compress_start():
 @app.route('/api/compress/status')
 def compress_get_status():
     return jsonify(compress_status)
+
+@app.route('/api/compress/cancel', methods=['POST'])
+def compress_cancel():
+    global compress_cancel_flag, compress_process, compress_status
+    compress_cancel_flag = True
+    if compress_process:
+        try:
+            compress_process.terminate()
+        except:
+            pass
+    compress_status['progress'] = 'Cancelando...'
+    return jsonify({'success': True, 'message': 'Cancelación solicitada'})
 
 # ============== MULTICOPIA ==============
 
@@ -532,29 +768,40 @@ def delete_folder():
     data = request.get_json()
     collection = data.get('collection')
     path = data.get('path')
+    full_path = data.get('full_path')  # Ruta completa directa
     force = data.get('force', False)
     
-    if not collection or not path:
+    # Si viene full_path, usarlo directamente
+    if full_path and os.path.exists(full_path):
+        target_path = full_path
+    elif collection and path:
+        base_path = get_collection_base_path(collection)
+        if not base_path:
+            return jsonify({'error': 'Colección inválida'}), 400
+        target_path = os.path.join(base_path, path)
+    else:
         return jsonify({'error': 'Faltan parámetros'}), 400
     
-    base_path = get_collection_base_path(collection)
-    if not base_path:
-        return jsonify({'error': 'Colección inválida'}), 400
-    
-    full_path = os.path.join(base_path, path)
-    
-    if not os.path.exists(full_path):
+    if not os.path.exists(target_path):
         return jsonify({'error': 'Carpeta no encontrada'}), 404
+    
+    # Verificar que está dentro de las rutas permitidas
+    allowed_roots = [CONFIG.get('FE_PATH', ''), CONFIG.get('TS_PATH', ''), CONFIG.get('TEMP_PATH', '')]
+    is_allowed = any(os.path.normpath(target_path).lower().startswith(os.path.normpath(root).lower()) for root in allowed_roots if root)
+    
+    if not is_allowed:
+        return jsonify({'error': 'Ruta no permitida'}), 403
     
     try:
         if force:
-            shutil.rmtree(full_path)
+            shutil.rmtree(target_path)
         else:
-            os.rmdir(full_path)
-        cache[collection] = None
+            os.rmdir(target_path)
+        cache['FE'] = None
+        cache['TS'] = None
         return jsonify({'success': True, 'message': 'Carpeta eliminada'})
     except OSError as e:
-        if 'not empty' in str(e).lower():
+        if 'not empty' in str(e).lower() or 'directory not empty' in str(e).lower():
             return jsonify({'error': 'La carpeta no está vacía'}), 400
         return jsonify({'error': str(e)}), 500
 
@@ -649,6 +896,229 @@ def rename_file():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ============== BÚSQUEDA UNIVERSAL ==============
+
+@app.route('/api/search')
+def search_files():
+    """Búsqueda universal en FE y TS"""
+    query = request.args.get('q', '').strip().lower()
+    
+    if len(query) < 2:
+        return jsonify({'results': [], 'error': 'Búsqueda muy corta'})
+    
+    results = []
+    max_results = 500
+    
+    # Buscar en FE
+    if CONFIG.get('FE_PATH') and os.path.exists(CONFIG['FE_PATH']):
+        for root, dirs, files in os.walk(CONFIG['FE_PATH']):
+            for f in files:
+                if query in f.lower():
+                    rel_path = os.path.relpath(os.path.join(root, f), CONFIG['FE_PATH'])
+                    results.append({
+                        'name': f,
+                        'collection': 'FE',
+                        'relative_path': rel_path.replace('\\', '/'),
+                        'full_path': os.path.join(root, f)
+                    })
+                    if len(results) >= max_results:
+                        break
+            if len(results) >= max_results:
+                break
+    
+    # Buscar en TS
+    ts_full_path = os.path.join(CONFIG.get('TS_PATH', ''), CONFIG.get('TS_TOSEC_SUBPATH', ''))
+    if ts_full_path and os.path.exists(ts_full_path) and len(results) < max_results:
+        for root, dirs, files in os.walk(ts_full_path):
+            for f in files:
+                if query in f.lower():
+                    rel_path = os.path.relpath(os.path.join(root, f), ts_full_path)
+                    results.append({
+                        'name': f,
+                        'collection': 'TS',
+                        'relative_path': rel_path.replace('\\', '/'),
+                        'full_path': os.path.join(root, f)
+                    })
+                    if len(results) >= max_results:
+                        break
+            if len(results) >= max_results:
+                break
+    
+    return jsonify({'results': results, 'total': len(results)})
+
+# ============== COPIAR A TEMP ==============
+
+@app.route('/api/copy-to-temp', methods=['POST'])
+def copy_to_temp():
+    """Copia un archivo a la carpeta TEMP"""
+    data = request.get_json()
+    source_path = data.get('source_path', '')
+    
+    if not source_path or not os.path.exists(source_path):
+        return jsonify({'success': False, 'error': 'Archivo no encontrado'})
+    
+    temp_path = CONFIG.get('TEMP_PATH', '')
+    if not temp_path:
+        return jsonify({'success': False, 'error': 'Carpeta TEMP no configurada'})
+    
+    try:
+        os.makedirs(temp_path, exist_ok=True)
+        filename = os.path.basename(source_path)
+        dest_path = os.path.join(temp_path, filename)
+        shutil.copy2(source_path, dest_path)
+        return jsonify({'success': True, 'filename': filename})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# ============== UPDATE PACKAGE ==============
+
+@app.route('/api/update/generate', methods=['POST'])
+def generate_update_package():
+    """
+    Copia archivos de TEMP a UPDATES_TOSEC usando la misma lógica que la pestaña TEMP.
+    Solo procesa archivos TOSEC válidos (sin .zip, .rar, etc.)
+    """
+    data = request.get_json()
+    target_collection = data.get('target_collection', 'TS')  # FE o TS
+    
+    # Verificar TEMP
+    temp_path = CONFIG.get('TEMP_PATH', '')
+    if not temp_path or not os.path.exists(temp_path):
+        return jsonify({'success': False, 'error': 'Carpeta TEMP no existe'})
+    
+    # Verificar UPDATES_TOSEC
+    updates_base = CONFIG.get('UPDATES_TOSEC_PATH', r'C:\ZX\UPDATES_TOSEC')
+    if not os.path.exists(updates_base):
+        return jsonify({'success': False, 'error': f'Carpeta UPDATES_TOSEC no existe: {updates_base}'})
+    
+    results = []
+    total_success = 0
+    total_errors = 0
+    
+    # Procesar cada archivo en TEMP (solo archivos TOSEC válidos)
+    for filename in os.listdir(temp_path):
+        file_path = os.path.join(temp_path, filename)
+        if not os.path.isfile(file_path):
+            continue
+        
+        ext = os.path.splitext(filename)[1].lower()
+        # Solo procesar archivos TOSEC válidos (sin .zip ni otros comprimidos)
+        if ext not in scanner.TOSEC_EXTENSIONS:
+            continue
+        
+        try:
+            # Obtener info TOSEC y rutas sugeridas (IGUAL que en scan_temp_files)
+            tosec_info = scanner._parse_tosec_filename(filename)
+            suggested_paths = scanner._suggest_destination(tosec_info, ext, filename)
+            
+            # Obtener las rutas para la colección seleccionada
+            paths_for_collection = suggested_paths.get(target_collection, [])
+            
+            if not paths_for_collection:
+                results.append({
+                    'filename': filename,
+                    'success': False,
+                    'error': f'No hay rutas sugeridas para {target_collection}'
+                })
+                total_errors += 1
+                continue
+            
+            # Copiar a UPDATES_TOSEC usando la función del scanner
+            copy_result = scanner.copy_file_to_updates_tosec(
+                file_path, 
+                paths_for_collection, 
+                target_collection, 
+                updates_base
+            )
+            
+            if copy_result['success']:
+                results.append({
+                    'filename': filename,
+                    'success': True,
+                    'dest_paths': copy_result['success']
+                })
+                total_success += 1
+            else:
+                results.append({
+                    'filename': filename,
+                    'success': False,
+                    'error': '; '.join(copy_result['errors']) if copy_result['errors'] else 'Error desconocido'
+                })
+                total_errors += 1
+                
+        except Exception as e:
+            results.append({
+                'filename': filename,
+                'success': False,
+                'error': str(e)
+            })
+            total_errors += 1
+    
+    return jsonify({
+        'success': True,
+        'total_files': total_success,
+        'total_errors': total_errors,
+        'results': results,
+        'target_collection': target_collection
+    })
+
+
+@app.route('/api/update/preview', methods=['POST'])
+def preview_update_package():
+    """
+    Muestra vista previa de los destinos antes de copiar (igual que TEMP muestra suggested_paths).
+    Solo procesa archivos TOSEC válidos (sin .zip, .rar, etc.)
+    """
+    data = request.get_json()
+    target_collection = data.get('target_collection', 'TS')
+    
+    temp_path = CONFIG.get('TEMP_PATH', '')
+    if not temp_path or not os.path.exists(temp_path):
+        return jsonify({'success': False, 'error': 'Carpeta TEMP no existe'})
+    
+    updates_base = CONFIG.get('UPDATES_TOSEC_PATH', r'C:\ZX\UPDATES_TOSEC')
+    if not os.path.exists(updates_base):
+        return jsonify({'success': False, 'error': f'Carpeta UPDATES_TOSEC no existe: {updates_base}'})
+    
+    files_preview = []
+    
+    for filename in os.listdir(temp_path):
+        file_path = os.path.join(temp_path, filename)
+        if not os.path.isfile(file_path):
+            continue
+        
+        ext = os.path.splitext(filename)[1].lower()
+        # Solo procesar archivos TOSEC válidos (sin .zip ni otros comprimidos)
+        if ext not in scanner.TOSEC_EXTENSIONS:
+            continue
+        
+        try:
+            tosec_info = scanner._parse_tosec_filename(filename)
+            suggested_paths = scanner._suggest_destination(tosec_info, ext, filename)
+            paths_for_collection = suggested_paths.get(target_collection, [])
+            
+            files_preview.append({
+                'filename': filename,
+                'tosec_info': tosec_info,
+                'dest_paths': paths_for_collection,
+                'has_destinations': len(paths_for_collection) > 0
+            })
+        except Exception as e:
+            files_preview.append({
+                'filename': filename,
+                'tosec_info': None,
+                'dest_paths': [],
+                'has_destinations': False,
+                'error': str(e)
+            })
+    
+    return jsonify({
+        'success': True,
+        'files': files_preview,
+        'target_collection': target_collection,
+        'total_files': len(files_preview)
+    })
 
 # ============== BACKUP NAS ==============
 
@@ -759,8 +1229,11 @@ def multicopy_browse(full_path=None):
         CONFIG['FE_PATH'],
         CONFIG['TS_PATH'],
         os.path.join(CONFIG['TS_PATH'], CONFIG['TS_TOSEC_SUBPATH']),
-        CONFIG['TEMP_PATH']
+        CONFIG['TEMP_PATH'],
+        CONFIG.get('UPDATES_TOSEC_PATH', '')
     ]
+    # Filtrar paths vacíos
+    ROOT_PATHS = [p for p in ROOT_PATHS if p]
 
     if full_path is None or full_path == 'ROOT':
         try:

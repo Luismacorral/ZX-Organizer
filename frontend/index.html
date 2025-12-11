@@ -82,10 +82,38 @@
             const [tsPath, setTsPath] = useState([]);
             const [tsItems, setTsItems] = useState([]);
             const [tsLoading, setTsLoading] = useState(false);
+            // Colección seleccionada en cada panel del Explorador
+            const [leftPanelCollection, setLeftPanelCollection] = useState('FE');
+            const [rightPanelCollection, setRightPanelCollection] = useState('TS');
+            // Rutas independientes para cada panel
+            const [leftPath, setLeftPath] = useState([]);
+            const [leftItems, setLeftItems] = useState([]);
+            const [leftLoading, setLeftLoading] = useState(false);
+            const [leftSelected, setLeftSelected] = useState([]);
+            const [rightPath, setRightPath] = useState([]);
+            const [rightItems, setRightItems] = useState([]);
+            const [rightLoading, setRightLoading] = useState(false);
+            const [rightSelected, setRightSelected] = useState([]);
             const [tempFiles, setTempFiles] = useState([]);
             const [rules, setRules] = useState([]);
             const [error, setError] = useState(null);
             const [success, setSuccess] = useState(null);
+            
+            // Auto-dismiss de notificaciones después de 3 segundos
+            useEffect(() => {
+                if (error) {
+                    const timer = setTimeout(() => setError(null), 3000);
+                    return () => clearTimeout(timer);
+                }
+            }, [error]);
+            
+            useEffect(() => {
+                if (success) {
+                    const timer = setTimeout(() => setSuccess(null), 3000);
+                    return () => clearTimeout(timer);
+                }
+            }, [success]);
+            
             const [copyLog, setCopyLog] = useState([]);
             const dragDataRef = useRef(null);
             const [showProcessModal, setShowProcessModal] = useState(false);
@@ -93,6 +121,21 @@
             const [selectedDestinations, setSelectedDestinations] = useState({ FE: [], TS: [] });
             const [processing, setProcessing] = useState(false);
             const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+            // Búsqueda universal
+            const [showSearchModal, setShowSearchModal] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const [searching, setSearching] = useState(false);
+            // Update package
+            const [updateStatus, setUpdateStatus] = useState({ running: false, progress: '', done: false, error: null });
+            const [updateResults, setUpdateResults] = useState([]);
+            const [updateTargetCollection, setUpdateTargetCollection] = useState('TS');
+            const [updatePreview, setUpdatePreview] = useState(null);
+            // Estados para TEMP (copia a FE/TS reales)
+            const [tempStatus, setTempStatus] = useState({ running: false, progress: '', done: false, error: null });
+            const [tempResults, setTempResults] = useState([]);
+            const [tempTargetCollection, setTempTargetCollection] = useState('TS');
+            const [tempPreview, setTempPreview] = useState(null);
             const [browserPath, setBrowserPath] = useState([]);
             const [browserFolders, setBrowserFolders] = useState([]);
             const [browserCollection, setBrowserCollection] = useState('FE');
@@ -137,6 +180,9 @@
                 loadStructures(); 
                 loadPanelContents('FE', [], setFeItems, setFeLoading);
                 loadPanelContents('TS', [], setTsItems, setTsLoading);
+                // Cargar paneles del explorador con contenido inicial
+                loadPanelContents('FE', [], setLeftItems, setLeftLoading);
+                loadPanelContents('TS', [], setRightItems, setRightLoading);
             }, []);
 
             // Polling del progreso de compresión
@@ -181,6 +227,159 @@
             };
 
             const loadTempFiles = async () => { try { const r = await fetch(`${API_BASE}/temp/scan`); const d = await r.json(); setTempFiles(d.files || []); } catch (err) { setError(err.message); } };
+            
+            // Búsqueda universal
+            const performSearch = async (query) => {
+                if (!query || query.length < 2) return;
+                setSearching(true);
+                try {
+                    const r = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
+                    const d = await r.json();
+                    setSearchResults(d.results || []);
+                } catch (err) {
+                    setError(err.message);
+                }
+                setSearching(false);
+            };
+            
+            const navigateToSearchResult = (result) => {
+                // Navegar a la ubicación del archivo
+                const pathParts = result.relative_path.split('/').slice(0, -1); // Sin el nombre del archivo
+                if (result.collection === 'FE') {
+                    setFePath(pathParts);
+                    loadPanelContents('FE', pathParts, setFeItems, setFeLoading);
+                } else {
+                    setTsPath(pathParts);
+                    loadPanelContents('TS', pathParts, setTsItems, setTsLoading);
+                }
+                setShowSearchModal(false);
+                setActiveTab('explorer');
+            };
+            
+            // Copiar archivo a TEMP desde búsqueda
+            const copySearchResultToTemp = async (result) => {
+                if (!confirm(`¿Copiar "${result.name}" a TEMP?`)) return;
+                try {
+                    const r = await fetch(`${API_BASE}/copy-to-temp`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ source_path: result.full_path })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Copiado a TEMP: ${result.name}`);
+                    } else {
+                        setError(d.error || 'Error al copiar');
+                    }
+                } catch (e) {
+                    setError('Error: ' + e.message);
+                }
+            };
+            
+            // Emular archivo desde búsqueda
+            const emulateSearchResult = async (result) => {
+                try {
+                    const r = await fetch(`${API_BASE}/emulator?path=${encodeURIComponent(result.full_path)}`);
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`🎮 Abriendo: ${result.name}`);
+                    } else {
+                        setError(d.error || 'Error al abrir emulador');
+                    }
+                } catch (e) {
+                    setError('Error: ' + e.message);
+                }
+            };
+            
+            // Generar paquete de actualización
+            const previewUpdatePackage = async () => {
+                setUpdatePreview(null);
+                setUpdateStatus({ running: false, progress: '', done: false, error: null });
+                try {
+                    const r = await fetch(`${API_BASE}/update/preview`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ target_collection: updateTargetCollection })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setUpdatePreview(d.files || []);
+                    } else {
+                        setUpdateStatus({ running: false, progress: '', done: false, error: d.error });
+                    }
+                } catch (e) {
+                    setUpdateStatus({ running: false, progress: '', done: false, error: e.message });
+                }
+            };
+            const generateUpdatePackage = async () => {
+                setUpdateStatus({ running: true, progress: 'Copiando a UPDATES_TOSEC...', done: false, error: null });
+                setUpdateResults([]);
+                setUpdatePreview(null);
+                try {
+                    const r = await fetch(`${API_BASE}/update/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            target_collection: updateTargetCollection
+                        })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setUpdateStatus({ running: false, progress: '', done: true, error: null });
+                        setUpdateResults(d.results || []);
+                        const successCount = (d.results || []).filter(r => r.success).length;
+                        setSuccess(`Copiados ${successCount} archivos a ${updateTargetCollection} en UPDATES_TOSEC`);
+                    } else {
+                        setUpdateStatus({ running: false, progress: '', done: false, error: d.error });
+                    }
+                } catch (e) {
+                    setUpdateStatus({ running: false, progress: '', done: false, error: e.message });
+                }
+            };
+            // Funciones para TEMP (copia a FE/TS reales)
+            const previewTempCopy = async () => {
+                setTempPreview(null);
+                setTempStatus({ running: false, progress: '', done: false, error: null });
+                try {
+                    const r = await fetch(`${API_BASE}/temp/preview`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ target_collection: tempTargetCollection })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setTempPreview(d.files || []);
+                    } else {
+                        setTempStatus({ running: false, progress: '', done: false, error: d.error });
+                    }
+                } catch (e) {
+                    setTempStatus({ running: false, progress: '', done: false, error: e.message });
+                }
+            };
+            const executeTempCopy = async () => {
+                setTempStatus({ running: true, progress: 'Copiando a colección...', done: false, error: null });
+                setTempResults([]);
+                setTempPreview(null);
+                try {
+                    const r = await fetch(`${API_BASE}/temp/copy`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ target_collection: tempTargetCollection })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setTempStatus({ running: false, progress: '', done: true, error: null });
+                        setTempResults(d.results || []);
+                        const successCount = (d.results || []).filter(r => r.success).length;
+                        setSuccess(`Copiados ${successCount} archivos a ${tempTargetCollection}`);
+                        loadTempFiles(); // Recargar lista
+                    } else {
+                        setTempStatus({ running: false, progress: '', done: false, error: d.error });
+                    }
+                } catch (e) {
+                    setTempStatus({ running: false, progress: '', done: false, error: e.message });
+                }
+            };
             const loadRules = async () => { try { const r = await fetch(`${API_BASE}/rules/load`); const d = await r.json(); setRules(d.rules || []); } catch (err) { setError(err.message); } };
             const saveRules = async () => { try { const r = await fetch(`${API_BASE}/rules/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) }); const d = await r.json(); if (d.success) setSuccess('Reglas guardadas'); } catch (err) { setError(err.message); } };
             const executeRules = async () => { setProcessing(true); try { const r = await fetch(`${API_BASE}/rules/execute`, { method: 'POST' }); const d = await r.json(); if (d.success) { setSuccess(d.message); loadTempFiles(); } else { setError(d.error || d.message); } } catch (err) { setError(err.message); } finally { setProcessing(false); } };
@@ -202,7 +401,7 @@
             };
 
             // DRAG & DROP
-            const handleDragStart = (e, item, sourceCollection) => { if (item.type !== 'file') { e.preventDefault(); return; } dragDataRef.current = { item, sourceCollection }; e.dataTransfer.effectAllowed = 'copy'; e.currentTarget.classList.add('dragging'); };
+            const handleDragStart = (e, item, sourceCollection) => { dragDataRef.current = { item, sourceCollection }; e.dataTransfer.effectAllowed = 'copy'; e.currentTarget.classList.add('dragging'); };
             const handleDragEnd = (e) => { e.currentTarget.classList.remove('dragging'); dragDataRef.current = null; };
             const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; };
             const handleDragEnter = (e) => { e.preventDefault(); e.currentTarget.classList.add('drag-over'); };
@@ -210,18 +409,49 @@
             const handleDrop = async (e, destCollection, destPath) => {
                 e.preventDefault(); e.currentTarget.classList.remove('drag-over');
                 const dragData = dragDataRef.current;
-                if (!dragData || dragData.sourceCollection === destCollection) { dragDataRef.current = null; return; }
+                if (!dragData) { dragDataRef.current = null; return; }
                 const { item, sourceCollection } = dragData;
-                try {
-                    const r = await fetch(`${API_BASE}/copy-between`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_path: item.full_path, dest_collection: destCollection, dest_folder: destPath.join('/') }) });
-                    const d = await r.json();
-                    if (d.success) {
-                        setCopyLog(prev => [{ time: new Date().toLocaleTimeString(), file: item.name, from: sourceCollection, to: destCollection, dest: destPath.join('/') || '(raíz)' }, ...prev.slice(0, 49)]);
-                        setSuccess(`✓ ${item.name} → ${destCollection}`);
-                        if (destCollection === 'FE' && fePath.length > 0) loadPanelContents('FE', fePath, setFeItems, setFeLoading);
-                        if (destCollection === 'TS' && tsPath.length > 0) loadPanelContents('TS', tsPath, setTsItems, setTsLoading);
-                    }
-                } catch (err) { setError(err.message); }
+                
+                // Si es carpeta, pedir confirmación
+                if (item.type === 'folder') {
+                    const confirmMsg = `¿Copiar la carpeta "${item.name}" y todo su contenido de ${sourceCollection} a ${destCollection}/${destPath.join('/') || '(raíz)'}?`;
+                    if (!confirm(confirmMsg)) { dragDataRef.current = null; return; }
+                    
+                    try {
+                        const r = await fetch(`${API_BASE}/copy-folder`, { 
+                            method: 'POST', 
+                            headers: { 'Content-Type': 'application/json' }, 
+                            body: JSON.stringify({ 
+                                source_path: item.full_path, 
+                                dest_collection: destCollection, 
+                                dest_folder: destPath.join('/'),
+                                folder_name: item.name
+                            }) 
+                        });
+                        const d = await r.json();
+                        if (d.success) {
+                            setCopyLog(prev => [{ time: new Date().toLocaleTimeString(), file: `📁 ${item.name}`, from: sourceCollection, to: destCollection, dest: destPath.join('/') || '(raíz)' }, ...prev.slice(0, 49)]);
+                            setSuccess(`✓ Carpeta ${item.name} copiada (${d.files_copied} archivos)`);
+                            if (leftPanelCollection === destCollection) loadPanelContents(destCollection, leftPath, setLeftItems, setLeftLoading);
+                            if (rightPanelCollection === destCollection) loadPanelContents(destCollection, rightPath, setRightItems, setRightLoading);
+                        } else {
+                            setError(d.error || 'Error al copiar carpeta');
+                        }
+                    } catch (err) { setError(err.message); }
+                } else {
+                    // Archivo normal
+                    if (sourceCollection === destCollection) { dragDataRef.current = null; return; }
+                    try {
+                        const r = await fetch(`${API_BASE}/copy-between`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_path: item.full_path, dest_collection: destCollection, dest_folder: destPath.join('/') }) });
+                        const d = await r.json();
+                        if (d.success) {
+                            setCopyLog(prev => [{ time: new Date().toLocaleTimeString(), file: item.name, from: sourceCollection, to: destCollection, dest: destPath.join('/') || '(raíz)' }, ...prev.slice(0, 49)]);
+                            setSuccess(`✓ ${item.name} → ${destCollection}`);
+                            if (leftPanelCollection === destCollection) loadPanelContents(destCollection, leftPath, setLeftItems, setLeftLoading);
+                            if (rightPanelCollection === destCollection) loadPanelContents(destCollection, rightPath, setRightItems, setRightLoading);
+                        }
+                    } catch (err) { setError(err.message); }
+                }
                 dragDataRef.current = null;
             };
 
@@ -234,6 +464,32 @@
             const clickRootTS = (f) => { setTsPath([f.name]); setSelectedFilesTS([]); loadPanelContents('TS', [f.name], setTsItems, setTsLoading); };
             const breadcrumbTS = (i) => { setSelectedFilesTS([]); if (i === -1) { setTsPath([]); loadPanelContents('TS', [], setTsItems, setTsLoading); } else { const np = tsPath.slice(0, i + 1); setTsPath(np); loadPanelContents('TS', np, setTsItems, setTsLoading); } };
             const refreshTS = () => { loadPanelContents('TS', tsPath, setTsItems, setTsLoading); loadStructures(); };
+            
+            // Funciones de navegación para panel izquierdo
+            const clickFolderLeft = (f) => { const np = [...leftPath, f.name]; setLeftPath(np); setLeftSelected([]); loadPanelContents(leftPanelCollection, np, setLeftItems, setLeftLoading); };
+            const clickRootLeft = (f) => { setLeftPath([f.name]); setLeftSelected([]); loadPanelContents(leftPanelCollection, [f.name], setLeftItems, setLeftLoading); };
+            const breadcrumbLeft = (i) => { setLeftSelected([]); if (i === -1) { setLeftPath([]); loadPanelContents(leftPanelCollection, [], setLeftItems, setLeftLoading); } else { const np = leftPath.slice(0, i + 1); setLeftPath(np); loadPanelContents(leftPanelCollection, np, setLeftItems, setLeftLoading); } };
+            const refreshLeft = () => { loadPanelContents(leftPanelCollection, leftPath, setLeftItems, setLeftLoading); };
+            
+            // Funciones de navegación para panel derecho
+            const clickFolderRight = (f) => { const np = [...rightPath, f.name]; setRightPath(np); setRightSelected([]); loadPanelContents(rightPanelCollection, np, setRightItems, setRightLoading); };
+            const clickRootRight = (f) => { setRightPath([f.name]); setRightSelected([]); loadPanelContents(rightPanelCollection, [f.name], setRightItems, setRightLoading); };
+            const breadcrumbRight = (i) => { setRightSelected([]); if (i === -1) { setRightPath([]); loadPanelContents(rightPanelCollection, [], setRightItems, setRightLoading); } else { const np = rightPath.slice(0, i + 1); setRightPath(np); loadPanelContents(rightPanelCollection, np, setRightItems, setRightLoading); } };
+            const refreshRight = () => { loadPanelContents(rightPanelCollection, rightPath, setRightItems, setRightLoading); };
+            
+            // Cambiar colección en panel (sin resetear la otra ventana)
+            const switchLeftPanel = (col) => { 
+                setLeftPanelCollection(col); 
+                setLeftPath([]);
+                setLeftSelected([]);
+                loadPanelContents(col, [], setLeftItems, setLeftLoading);
+            };
+            const switchRightPanel = (col) => { 
+                setRightPanelCollection(col);
+                setRightPath([]);
+                setRightSelected([]);
+                loadPanelContents(col, [], setRightItems, setRightLoading);
+            };
 
             // Funciones para crear carpeta
             const [showNewFolderModal, setShowNewFolderModal] = useState(false);
@@ -264,7 +520,10 @@
                         setSuccess(`Carpeta "${newFolderName}" creada`);
                         setShowNewFolderModal(false);
                         setNewFolderName('');
-                        if (newFolderCollection === 'FE') refreshFE(); else refreshTS();
+                        // Refrescar paneles que muestren esta colección
+                        if (leftPanelCollection === newFolderCollection) loadPanelContents(newFolderCollection, leftPath, setLeftItems, setLeftLoading);
+                        if (rightPanelCollection === newFolderCollection) loadPanelContents(newFolderCollection, rightPath, setRightItems, setRightLoading);
+                        loadStructures();
                     } else {
                         setError(d.error || 'Error al crear carpeta');
                     }
@@ -296,47 +555,33 @@
 
             // Borrar carpeta
             const deleteFolder = async (collection, folderPath, folderName) => {
-                const hasContents = confirm(`¿Borrar la carpeta "${folderName}"?\n\nSi tiene contenido, pulsa Cancelar y luego confirma si deseas borrar TODO.`);
-                if (!hasContents) {
-                    // Preguntar si borrar con contenido
-                    if (!confirm(`¿Borrar "${folderName}" Y TODO SU CONTENIDO?\n\n⚠️ Esta acción NO se puede deshacer.`)) return;
-                }
+                // Preguntar directamente si quiere borrar con todo el contenido
+                if (!confirm(`¿Borrar la carpeta "${folderName}" y TODO su contenido?\n\n⚠️ Esta acción NO se puede deshacer.`)) return;
+                
+                // Función para refrescar paneles después de borrar
+                const refreshPanels = () => {
+                    if (leftPanelCollection === collection) loadPanelContents(collection, leftPath, setLeftItems, setLeftLoading);
+                    if (rightPanelCollection === collection) loadPanelContents(collection, rightPath, setRightItems, setRightLoading);
+                    loadStructures();
+                };
                 
                 try {
-                    const basePath = collection === 'FE' ? fePath : tsPath;
+                    // Usar folderPath directamente ya que viene del item.full_path o construir desde el panel
                     const r = await fetch(`${API_BASE}/folder/delete`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
                             collection, 
-                            path: [...basePath, folderName].join('/'),
-                            force: !hasContents  // Si dijo NO al primer confirm, forzar borrado
+                            full_path: folderPath,  // Enviar ruta completa
+                            force: true  // Siempre forzar borrado
                         })
                     });
                     const d = await r.json();
                     if (d.success) {
                         setSuccess(`Carpeta "${folderName}" eliminada`);
-                        if (collection === 'FE') refreshFE(); else refreshTS();
+                        refreshPanels();
                     } else {
-                        // Si falla porque no está vacía, preguntar si forzar
-                        if (d.error && d.error.includes('no está vacía')) {
-                            if (confirm(`La carpeta no está vacía. ¿Borrar TODO su contenido?\n\n⚠️ Esta acción NO se puede deshacer.`)) {
-                                const r2 = await fetch(`${API_BASE}/folder/delete`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ collection, path: [...basePath, folderName].join('/'), force: true })
-                                });
-                                const d2 = await r2.json();
-                                if (d2.success) {
-                                    setSuccess(`Carpeta "${folderName}" y su contenido eliminados`);
-                                    if (collection === 'FE') refreshFE(); else refreshTS();
-                                } else {
-                                    setError(d2.error);
-                                }
-                            }
-                        } else {
-                            setError(d.error);
-                        }
+                        setError(d.error || 'Error al borrar carpeta');
                     }
                 } catch (e) { setError(e.message); }
             };
@@ -370,6 +615,52 @@
                 } else {
                     setSelectedFilesTS(prev => prev.includes(filePath) ? prev.filter(f => f !== filePath) : [...prev, filePath]);
                 }
+            };
+            
+            // Selección para paneles izquierdo/derecho
+            const toggleLeftSelection = (filePath) => {
+                setLeftSelected(prev => prev.includes(filePath) ? prev.filter(f => f !== filePath) : [...prev, filePath]);
+            };
+            const toggleRightSelection = (filePath) => {
+                setRightSelected(prev => prev.includes(filePath) ? prev.filter(f => f !== filePath) : [...prev, filePath]);
+            };
+            
+            const deleteLeftSelected = async () => {
+                if (leftSelected.length === 0) return;
+                if (!confirm(`¿Borrar ${leftSelected.length} archivo(s)?`)) return;
+                try {
+                    const r = await fetch(`${API_BASE}/files/delete`, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ files: leftSelected }) 
+                    });
+                    const d = await r.json();
+                    if (d.success_count > 0) {
+                        setSuccess(`${d.success_count} archivo(s) eliminados`);
+                    }
+                    setLeftSelected([]);
+                    loadPanelContents(leftPanelCollection, leftPath, setLeftItems, setLeftLoading);
+                    loadStructures();
+                } catch (e) { setError(e.message); }
+            };
+            
+            const deleteRightSelected = async () => {
+                if (rightSelected.length === 0) return;
+                if (!confirm(`¿Borrar ${rightSelected.length} archivo(s)?`)) return;
+                try {
+                    const r = await fetch(`${API_BASE}/files/delete`, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ files: rightSelected }) 
+                    });
+                    const d = await r.json();
+                    if (d.success_count > 0) {
+                        setSuccess(`${d.success_count} archivo(s) eliminados`);
+                    }
+                    setRightSelected([]);
+                    loadPanelContents(rightPanelCollection, rightPath, setRightItems, setRightLoading);
+                    loadStructures();
+                } catch (e) { setError(e.message); }
             };
 
             const getFileExt = (name) => { const i = name.lastIndexOf('.'); return i > 0 ? name.substring(i).toLowerCase() : ''; };
@@ -413,9 +704,43 @@
 
 
             // TEMP
-            const deleteTempFile = async (fn) => { if (!confirm(`¿Eliminar ${fn}?`)) return; await fetch(`${API_BASE}/temp/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: fn }) }); loadTempFiles(); };
+            const deleteTempFile = async (fn) => { if (!confirm(`¿Eliminar ${fn}?`)) return; await fetch(`${API_BASE}/temp/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: fn }) }); loadTempFiles(); setTempPreview(null); };
+            
+            const renameTempFile = async (oldPath, oldName) => {
+                const newName = prompt(`Renombrar "${oldName}":\n\nNuevo nombre:`, oldName);
+                if (!newName || newName === oldName) return;
+                try {
+                    const r = await fetch(`${API_BASE}/files/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_path: oldPath, new_name: newName })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Renombrado: "${oldName}" → "${newName}"`);
+                        loadTempFiles();
+                        setTempPreview(null); // Limpiar vista previa ya que cambió el nombre
+                    } else {
+                        setError(d.error || 'Error al renombrar');
+                    }
+                } catch (e) { setError(e.message); }
+            };
             const openProcessModal = (f) => { setSelectedFile(f); setSelectedDestinations({ FE: f.suggested_paths?.FE || [], TS: f.suggested_paths?.TS || [] }); setShowProcessModal(true); };
-            const processFile = async () => { if (!selectedFile) return; setProcessing(true); const r = await fetch(`${API_BASE}/process-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, destinations: selectedDestinations }) }); const d = await r.json(); setProcessing(false); if (d.overall_success) { setSuccess('Copiado'); setShowProcessModal(false); loadTempFiles(); } };
+            const processFile = async () => { 
+                if (!selectedFile) return; 
+                setProcessing(true); 
+                const r = await fetch(`${API_BASE}/process-file`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, destinations: selectedDestinations }) }); 
+                const d = await r.json(); 
+                setProcessing(false); 
+                if (d.overall_success) { 
+                    setSuccess('Copiado'); 
+                    setShowProcessModal(false); 
+                    loadTempFiles(); 
+                    // Auto-refresh destinos
+                    if (selectedDestinations.FE?.length > 0) refreshFE();
+                    if (selectedDestinations.TS?.length > 0) refreshTS();
+                } 
+            };
             const toggleDestination = (c, p) => { setSelectedDestinations(prev => { const l = prev[c] || []; return l.includes(p) ? { ...prev, [c]: l.filter(x => x !== p) } : { ...prev, [c]: [...l, p] }; }); };
 
             // Compresión
@@ -428,6 +753,16 @@
                     const d = await r.json();
                     if (!d.success) { setError(d.error); setCompressing(false); }
                 } catch (err) { setError(err.message); setCompressing(false); }
+            };
+            
+            const cancelCompression = async () => {
+                try {
+                    await fetch(`${API_BASE}/compress/cancel`, { method: 'POST' });
+                    // Resetear estado para volver a pantalla inicial
+                    setCompressing(false);
+                    setCompressProgress(null);
+                    setSuccess('Compresión cancelada');
+                } catch (err) { setError(err.message); }
             };
 
             // Backup NAS
@@ -504,7 +839,7 @@
                 const canEmulate = item.type === 'file' && isEmulable(item.name);
                 const canOpen = item.type === 'file' && isOpenable(item.name);
                 if (item.type === 'folder') {
-                    return (<div className="p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50 group">
+                    return (<div draggable="true" onDragStart={(e) => handleDragStart(e, item, collection)} onDragEnd={handleDragEnd} className="p-1.5 rounded border text-xs flex items-center gap-1.5 bg-gray-800/50 border-gray-700/50 hover:border-cyan-500/50 group cursor-move">
                         <div onClick={() => onFolderClick(item)} className="flex-1 flex items-center gap-1.5 cursor-pointer">
                             <Icon name="folder" className="w-3.5 h-3.5 text-cyan-400" />
                             <span className="flex-1 truncate">{item.name}</span>
@@ -612,6 +947,66 @@
                 finally { setMcLoading(false); }
             };
 
+            // Funciones de gestión de archivos en Multicopia
+            const mcDeleteItem = async (itemPath, itemName, isFolder) => {
+                const msg = isFolder ? `¿Eliminar la carpeta "${itemName}" y todo su contenido?` : `¿Eliminar el archivo "${itemName}"?`;
+                if (!confirm(msg)) return;
+                
+                try {
+                    const r = await fetch(`${API_BASE}/files/delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ files: [itemPath] })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Eliminado: ${itemName}`);
+                        // Refrescar panel source
+                        loadMcSourceContents(mcSourceCollection, mcSourcePath);
+                        // Quitar de seleccionados si estaba
+                        setMcSelectedFiles(mcSelectedFiles.filter(f => f !== itemPath));
+                    } else {
+                        setError(d.error || 'Error al eliminar');
+                    }
+                } catch (e) { setError(e.message); }
+            };
+            
+            const mcRenameItem = async (itemPath, itemName) => {
+                const newName = prompt(`Renombrar "${itemName}":\n\nNuevo nombre:`, itemName);
+                if (!newName || newName === itemName) return;
+                
+                try {
+                    const r = await fetch(`${API_BASE}/files/rename`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ old_path: itemPath, new_name: newName })
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`Renombrado: "${itemName}" → "${newName}"`);
+                        loadMcSourceContents(mcSourceCollection, mcSourcePath);
+                        // Actualizar seleccionados si estaba
+                        if (mcSelectedFiles.includes(itemPath)) {
+                            setMcSelectedFiles(mcSelectedFiles.map(f => f === itemPath ? d.new_path : f));
+                        }
+                    } else {
+                        setError(d.error || 'Error al renombrar');
+                    }
+                } catch (e) { setError(e.message); }
+            };
+            
+            const mcEmulateItem = async (itemPath, itemName) => {
+                try {
+                    const r = await fetch(`${API_BASE}/emulator?path=${encodeURIComponent(itemPath)}`);
+                    const d = await r.json();
+                    if (d.success) {
+                        setSuccess(`🎮 Abriendo: ${itemName}`);
+                    } else {
+                        setError(d.error || 'Error al abrir emulador');
+                    }
+                } catch (e) { setError(e.message); }
+            };
+            
             const executeNewMulticopy = async () => {
                 if (mcSelectedFiles.length === 0) return;
                 
@@ -650,7 +1045,9 @@
                     const d = await r.json();
                     if (d.success) {
                         setSuccess(`Copiados ${d.copied} archivos.`);
-                        setMcSelectedFiles([]);
+                        // NO limpiamos la selección - el usuario debe hacerlo manualmente con el botón "Limpiar"
+                        // Refrescar destino
+                        loadMcDestContents(mcDestCollection, mcDestPath);
                     } else {
                         setError(d.error || 'Error al copiar');
                     }
@@ -698,66 +1095,213 @@
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2"><div className="w-7 h-7 bg-gradient-to-br from-cyan-400 to-purple-500 rounded flex items-center justify-center"><Icon name="terminal" className="w-4 h-4" /></div><span className="font-bold text-sm">ZX TOSEC Organizer</span></div>
                             <div className="flex items-center gap-3">
-                                <div className="flex gap-2 text-xs"><span className="text-gray-400">FE: <span className="text-blue-400">{feStructure?.total_files?.toLocaleString()}</span></span><span className="text-gray-400">TS: <span className="text-cyan-400">{tsStructure?.total_files?.toLocaleString()}</span></span></div>
-                                <div className="flex gap-1">{['explorer', 'temp', 'multicopy', 'compress', 'nas'].map(tab => (<button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp') loadTempFiles(); if (tab === 'nas') loadBackupFiles(); }} className={`px-2 py-1 rounded text-xs ${activeTab === tab ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>{tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'multicopy' ? 'Multicopia' : tab === 'compress' ? 'Comprimir' : 'Backup NAS'}</button>))}</div>
+                                <div className="flex gap-2 text-xs">{feStructure && <span className="text-gray-400">FE: <span className="text-blue-400">{feStructure?.total_files?.toLocaleString()}</span></span>}{tsStructure && <span className="text-gray-400">TS: <span className="text-cyan-400">{tsStructure?.total_files?.toLocaleString()}</span></span>}</div>
+                                <div className="flex gap-1">{['explorer', 'temp', 'multicopy', 'update', 'compress', 'nas'].map(tab => (<button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'temp' || tab === 'update') loadTempFiles(); if (tab === 'nas') loadBackupFiles(); }} className={`px-2 py-1 rounded text-xs ${activeTab === tab ? 'bg-purple-600' : 'bg-gray-800 hover:bg-gray-700'}`}>{tab === 'explorer' ? 'Explorador' : tab === 'temp' ? 'TEMP' : tab === 'multicopy' ? 'Multicopia' : tab === 'update' ? 'Update' : tab === 'compress' ? 'Comprimir' : 'Backup NAS'}</button>))}</div>
+                                <button onClick={() => setShowSearchModal(true)} className="px-3 py-1 bg-yellow-600 hover:bg-yellow-500 rounded text-xs flex items-center gap-1"><Icon name="search" className="w-3 h-3" />Buscar</button>
                             </div>
                         </div>
                     </header>
 
-                    {error && <div className="mx-3 mt-1 p-1.5 bg-red-500/20 border border-red-500/50 rounded text-xs flex justify-between"><span>{error}</span><button onClick={() => setError(null)}>✕</button></div>}
-                    {success && <div className="mx-3 mt-1 p-1.5 bg-green-500/20 border border-green-500/50 rounded text-xs flex justify-between"><span>{success}</span><button onClick={() => setSuccess(null)}>✕</button></div>}
+                    {/* Notificaciones flotantes - centradas en header */}
+                    {(error || success) && (
+                        <div className="fixed top-1 left-1/2 transform -translate-x-1/2 z-50 max-w-lg w-full px-4">
+                            {error && <div className="px-6 py-2 bg-red-900/95 border border-red-500 rounded text-sm text-center shadow-lg backdrop-blur">{error}</div>}
+                            {success && <div className="px-6 py-2 bg-green-900/95 border border-green-500 rounded text-sm text-center shadow-lg backdrop-blur">{success}</div>}
+                        </div>
+                    )}
 
-                    <div className="p-2" style={{ height: 'calc(100vh - 50px)' }}>
+                    <div className="p-2 h-[calc(100vh-50px)]">
                         {activeTab === 'explorer' && (
                             <div className="h-full flex gap-2">
-                                <div className="w-96 flex flex-col gap-2">
-                                    <div className="bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
-                                    <div className="bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden" style={{ height: panelHeight }}><div className="flex items-center gap-1 mb-1"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div><div className="overflow-y-auto" style={{ height: 'calc(100% - 20px)' }}>{tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>
+                                <div className="w-96 h-full flex flex-col gap-2">
+                                    {/* Panel FE en sidebar */}
+                                    {feStructure && <div className="flex-1 bg-black/40 border border-blue-500/30 rounded p-2 overflow-hidden flex flex-col"><div className="flex items-center gap-1 mb-1 shrink-0"><Icon name="folder" className="w-3 h-3 text-blue-400" /><span className="text-xs font-bold text-blue-400">FE</span><span className="text-xs text-gray-400 ml-auto">{feStructure?.total_files?.toLocaleString()}</span></div><div className="flex-1 overflow-y-auto">{feStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootFE(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-blue-500/20 flex justify-between ${fePath[0] === f.name ? 'bg-blue-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>}
+                                    {/* Panel TS en sidebar */}
+                                    {tsStructure && <div className="flex-1 bg-black/40 border border-cyan-500/30 rounded p-2 overflow-hidden flex flex-col"><div className="flex items-center gap-1 mb-1 shrink-0"><Icon name="folder" className="w-3 h-3 text-cyan-400" /><span className="text-xs font-bold text-cyan-400">TS</span><span className="text-xs text-gray-400 ml-auto">{tsStructure?.total_files?.toLocaleString()}</span></div><div className="flex-1 overflow-y-auto">{tsStructure?.folders?.map((f, i) => (<button key={i} onClick={() => clickRootTS(f)} className={`w-full text-left px-1 py-0.5 rounded text-xs hover:bg-cyan-500/20 flex justify-between ${tsPath[0] === f.name ? 'bg-cyan-500/30' : ''}`}><span className="truncate">{f.name}</span><span className="text-purple-400 ml-1">{f.file_count?.toLocaleString()}</span></button>))}</div></div>}
+                                    {/* Si no hay ninguna estructura */}
+                                    {!feStructure && !tsStructure && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">No hay colecciones disponibles</div>}
                                 </div>
                                 <div className="flex-1 flex bg-black/40 border border-purple-500/20 rounded overflow-hidden">
-                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'FE', fePath)}>
-                                        <div className="px-2 py-1 bg-blue-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
-                                            <button onClick={() => breadcrumbFE(-1)} className="font-bold text-blue-400 hover:underline">FE</button>
-                                            {fePath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbFE(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
-                                            {feItems.length > 0 && <span className="text-yellow-400 font-bold">({feItems.length})</span>}
+                                    {/* Panel izquierdo */}
+                                    <div className="flex-1 flex flex-col border-r border-purple-500/20" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, leftPanelCollection, leftPath)}>
+                                        <div className={`px-2 py-1 ${leftPanelCollection === 'FE' ? 'bg-blue-900/30' : 'bg-cyan-900/30'} border-b border-purple-500/20 flex items-center gap-1 text-xs`}>
+                                            <div className="flex gap-1 mr-2">
+                                                {feStructure && <button onClick={() => switchLeftPanel('FE')} className={`px-2 py-0.5 rounded text-xs font-bold ${leftPanelCollection === 'FE' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>FE</button>}
+                                                {tsStructure && <button onClick={() => switchLeftPanel('TS')} className={`px-2 py-0.5 rounded text-xs font-bold ${leftPanelCollection === 'TS' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>TS</button>}
+                                            </div>
+                                            <button onClick={() => breadcrumbLeft(-1)} className={`font-bold ${leftPanelCollection === 'FE' ? 'text-blue-400' : 'text-cyan-400'} hover:underline`}>/</button>
+                                            {leftPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbLeft(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
+                                            {leftItems.length > 0 && <span className="text-yellow-400 font-bold">({leftItems.length})</span>}
                                             <div className="ml-auto flex gap-1">
-                                                <button onClick={() => openNewFolderModal('FE')} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
-                                                {selectedFilesFE.length > 0 && <button onClick={() => deleteSelectedFiles('FE')} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${selectedFilesFE.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
-                                                <button onClick={refreshFE} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                                <button onClick={() => openNewFolderModal(leftPanelCollection)} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
+                                                {leftSelected.length > 0 && <button onClick={deleteLeftSelected} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${leftSelected.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
+                                                <button onClick={refreshLeft} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
                                             </div>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1">
-                                            {feLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div> : 
-                                            <div className="space-y-0.5">{feItems.map((item, idx) => <FileRow key={idx} item={item} collection="FE" onFolderClick={clickFolderFE} isSelected={selectedFilesFE.includes(item.full_path)} onToggleSelect={toggleFileSelection} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
+                                            {leftLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className={`w-5 h-5 ${leftPanelCollection === 'FE' ? 'text-blue-400' : 'text-cyan-400'}`} /></div> : 
+                                            <div className="space-y-0.5">{leftItems.map((item, idx) => <FileRow key={idx} item={item} collection={leftPanelCollection} onFolderClick={clickFolderLeft} isSelected={leftSelected.includes(item.full_path)} onToggleSelect={(col, path) => toggleLeftSelection(path)} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
                                         </div>
-                                        {selectedFilesFE.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{selectedFilesFE.length} archivo(s) seleccionado(s)</div>}
+                                        {leftSelected.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{leftSelected.length} archivo(s) seleccionado(s)</div>}
                                     </div>
-                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'TS', tsPath)}>
-                                        <div className="px-2 py-1 bg-cyan-900/30 border-b border-purple-500/20 flex items-center gap-1 text-xs">
-                                            <button onClick={() => breadcrumbTS(-1)} className="font-bold text-cyan-400 hover:underline">TS</button>
-                                            {tsPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbTS(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
-                                            {tsItems.length > 0 && <span className="text-yellow-400 font-bold">({tsItems.length})</span>}
+                                    {/* Panel derecho */}
+                                    <div className="flex-1 flex flex-col" onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, rightPanelCollection, rightPath)}>
+                                        <div className={`px-2 py-1 ${rightPanelCollection === 'FE' ? 'bg-blue-900/30' : 'bg-cyan-900/30'} border-b border-purple-500/20 flex items-center gap-1 text-xs`}>
+                                            <div className="flex gap-1 mr-2">
+                                                {feStructure && <button onClick={() => switchRightPanel('FE')} className={`px-2 py-0.5 rounded text-xs font-bold ${rightPanelCollection === 'FE' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>FE</button>}
+                                                {tsStructure && <button onClick={() => switchRightPanel('TS')} className={`px-2 py-0.5 rounded text-xs font-bold ${rightPanelCollection === 'TS' ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>TS</button>}
+                                            </div>
+                                            <button onClick={() => breadcrumbRight(-1)} className={`font-bold ${rightPanelCollection === 'FE' ? 'text-blue-400' : 'text-cyan-400'} hover:underline`}>/</button>
+                                            {rightPath.map((s, i) => (<React.Fragment key={i}><span className="text-gray-600">/</span><button onClick={() => breadcrumbRight(i)} className="text-purple-400 truncate max-w-20 hover:underline">{s}</button></React.Fragment>))}
+                                            {rightItems.length > 0 && <span className="text-yellow-400 font-bold">({rightItems.length})</span>}
                                             <div className="ml-auto flex gap-1">
-                                                <button onClick={() => openNewFolderModal('TS')} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
-                                                {selectedFilesTS.length > 0 && <button onClick={() => deleteSelectedFiles('TS')} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${selectedFilesTS.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
-                                                <button onClick={refreshTS} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
+                                                <button onClick={() => openNewFolderModal(rightPanelCollection)} className="p-0.5 hover:bg-gray-700 rounded" title="Nueva carpeta"><Icon name="plus" className="w-3 h-3 text-green-400" /></button>
+                                                {rightSelected.length > 0 && <button onClick={deleteRightSelected} className="p-0.5 hover:bg-red-700 rounded bg-red-600" title={`Borrar ${rightSelected.length} archivo(s)`}><Icon name="trash" className="w-3 h-3" /></button>}
+                                                <button onClick={refreshRight} className="p-0.5 hover:bg-gray-700 rounded"><Icon name="refresh" className="w-3 h-3 text-gray-400" /></button>
                                             </div>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1">
-                                            {tsLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div> : 
-                                            <div className="space-y-0.5">{tsItems.map((item, idx) => <FileRow key={idx} item={item} collection="TS" onFolderClick={clickFolderTS} isSelected={selectedFilesTS.includes(item.full_path)} onToggleSelect={toggleFileSelection} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
+                                            {rightLoading ? <div className="flex items-center justify-center h-full"><Icon name="loader" className={`w-5 h-5 ${rightPanelCollection === 'FE' ? 'text-blue-400' : 'text-cyan-400'}`} /></div> : 
+                                            <div className="space-y-0.5">{rightItems.map((item, idx) => <FileRow key={idx} item={item} collection={rightPanelCollection} onFolderClick={clickFolderRight} isSelected={rightSelected.includes(item.full_path)} onToggleSelect={(col, path) => toggleRightSelection(path)} onDeleteFolder={deleteFolder} onRename={renameFile} />)}</div>}
                                         </div>
-                                        {selectedFilesTS.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{selectedFilesTS.length} archivo(s) seleccionado(s)</div>}
+                                        {rightSelected.length > 0 && <div className="px-2 py-1 bg-purple-900/30 border-t border-purple-500/20 text-xs text-purple-300">{rightSelected.length} archivo(s) seleccionado(s)</div>}
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'temp' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><div className="flex justify-between items-center mb-3"><h2 className="font-bold flex items-center gap-2"><Icon name="zap" className="w-4 h-4 text-yellow-400" />TEMP ({tempFiles.length})</h2><button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs"><Icon name="refresh" className="w-3 h-3" /></button></div><div className="space-y-1">{tempFiles.map((f, i) => (<div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 rounded text-xs flex items-center gap-2"><Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} /><div className="flex-1 min-w-0"><p className="truncate font-medium">{f.name}</p><p className="text-gray-400">{(f.size / 1024).toFixed(1)}KB</p></div>{isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 rounded"><Icon name="play" className="w-3 h-3" /></button>}<button onClick={() => openProcessModal(f)} className="px-2 py-1 bg-blue-600 rounded"><Icon name="copy" className="w-3 h-3" /></button><button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 rounded"><Icon name="trash" className="w-3 h-3" /></button></div>))}</div></div>)}
+                        {activeTab === 'temp' && (<div className="h-full flex flex-col overflow-hidden bg-black/30 border border-purple-500/30 rounded p-3">
+                            <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="zap" className="w-5 h-5 text-yellow-400" />Copiar TEMP a Colección</h2>
+                            <p className="text-sm text-gray-400 mb-4">Copia los archivos de TEMP directamente a <code className="bg-gray-800 px-1 rounded">FE</code> o <code className="bg-gray-800 px-1 rounded">TS</code></p>
+                            <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => { setTempTargetCollection('FE'); setTempPreview(null); }} className={`px-4 py-2 rounded font-bold ${tempTargetCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE</button>
+                                    <button onClick={() => { setTempTargetCollection('TS'); setTempPreview(null); }} className={`px-4 py-2 rounded font-bold ${tempTargetCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS</button>
+                                    <button onClick={previewTempCopy} disabled={tempStatus.running || tempFiles.length === 0} className={`px-4 py-2 rounded font-bold flex items-center gap-2 ${tempFiles.length === 0 ? 'bg-gray-600 cursor-not-allowed' : 'bg-yellow-600 hover:bg-yellow-500'}`}>🔍 Ver destinos</button>
+                                    <button onClick={executeTempCopy} disabled={tempStatus.running || tempFiles.length === 0} className={`px-4 py-2 rounded font-bold flex items-center gap-2 ${tempStatus.running || tempFiles.length === 0 ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500'}`}>{tempStatus.running ? <><Icon name="loader" className="w-4 h-4 animate-spin" />Copiando...</> : <>📦 Copiar a {tempTargetCollection}</>}</button>
+                                </div>
+                                
+                                {tempStatus.error && <div className="p-2 bg-red-900/30 border border-red-500 rounded text-sm text-red-400">{tempStatus.error}</div>}
+                                
+                                {/* Vista previa de destinos */}
+                                {tempPreview && tempPreview.length > 0 && !tempStatus.done && (
+                                    <div className="flex-1 min-h-0 flex flex-col mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded">
+                                        <h3 className="font-bold text-sm mb-2 text-yellow-400">🔍 Vista previa de destinos para {tempTargetCollection}</h3>
+                                        <div className="flex-1 overflow-y-auto space-y-2">{tempPreview.map((f, i) => (
+                                            <div key={i} className={`p-2 rounded text-xs ${f.has_destinations ? 'bg-gray-800/50 border border-gray-700' : 'bg-red-900/20 border border-red-700/30'}`}>
+                                                <p className="font-medium text-white">{f.filename}</p>
+                                                {f.tosec_info && <p className="text-gray-500 text-xs">Título: {f.tosec_info.title} | Año: {f.tosec_info.year || '?'}</p>}
+                                                {f.dest_paths && f.dest_paths.length > 0 ? (
+                                                    <div className="mt-1 text-green-400">{f.dest_paths.map((p, j) => <p key={j} className="truncate">→ {p}</p>)}</div>
+                                                ) : (
+                                                    <p className="text-red-400 mt-1">{f.error || 'Sin destinos disponibles'}</p>
+                                                )}
+                                            </div>
+                                        ))}</div>
+                                    </div>
+                                )}
+                                
+                                {/* Resultados de copia */}
+                                {tempStatus.done && tempResults.length > 0 && (
+                                    <div className="flex-1 min-h-0 flex flex-col mt-4">
+                                        <h3 className="font-bold text-sm mb-2 text-green-400">✓ Archivos copiados ({tempResults.filter(r => r.success).length}/{tempResults.length})</h3>
+                                        <div className="flex-1 overflow-y-auto space-y-1">{tempResults.map((r, i) => (
+                                            <div key={i} className={`p-2 rounded text-xs ${r.success ? 'bg-green-900/20 border border-green-700/30' : 'bg-red-900/20 border border-red-700/30'}`}>
+                                                <p className="font-medium truncate">{r.filename}</p>
+                                                {r.dest_paths && r.dest_paths.length > 0 && r.dest_paths.map((p, j) => <p key={j} className="text-gray-400 truncate">→ {p}</p>)}
+                                                {r.error && <p className="text-red-400">{r.error}</p>}
+                                            </div>
+                                        ))}</div>
+                                    </div>
+                                )}
+                                
+                                {/* Archivos en TEMP */}
+                                <div className="flex-1 min-h-0 flex flex-col p-3 bg-gray-800/50 rounded border border-gray-700">
+                                    <div className="flex justify-between items-center mb-2 shrink-0">
+                                        <h4 className="font-bold text-sm text-yellow-400">📁 Archivos en TEMP ({tempFiles.length})</h4>
+                                        <div className="flex gap-1">
+                                            <button onClick={loadTempFiles} className="px-2 py-1 bg-purple-600 rounded text-xs" title="Refrescar"><Icon name="refresh" className="w-3 h-3" /></button>
+                                        </div>
+                                    </div>
+                                    {tempFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-8">No hay archivos en TEMP</p> :
+                                    <div className="flex-1 overflow-y-auto space-y-1">{tempFiles.map((f, i) => (
+                                        <div key={i} className="flex items-center gap-2 py-1 px-2 hover:bg-gray-700/50 rounded group bg-gray-900/30">
+                                            <Icon name="file" className={`w-4 h-4 ${isEmulable(f.name) ? 'text-green-400' : 'text-cyan-400'}`} />
+                                            <span className="truncate flex-1 text-gray-200 text-sm">{f.name}</span>
+                                            <span className="text-gray-500 text-xs">{(f.size / 1024).toFixed(1)}KB</span>
+                                            <div className="flex gap-1 opacity-50 group-hover:opacity-100">
+                                                {isEmulable(f.name) && <button onClick={() => loadInEmulator(f.full_path, f.name)} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-xs" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}
+                                                <button onClick={() => renameTempFile(f.full_path, f.name)} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs" title="Renombrar"><Icon name="edit" className="w-3 h-3" /></button>
+                                                <button onClick={() => deleteTempFile(f.name)} className="px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs" title="Eliminar"><Icon name="trash" className="w-3 h-3" /></button>
+                                            </div>
+                                        </div>
+                                    ))}</div>}
+                                </div>
+                            </div>
+                        </div>)}
 
+                        {activeTab === 'update' && (<div className="h-full flex flex-col overflow-hidden bg-black/30 border border-purple-500/30 rounded p-3">
+                            <h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="upload" className="w-5 h-5 text-green-400" />Copiar a UPDATES_TOSEC</h2>
+                            <p className="text-sm text-gray-400 mb-4">Copia los archivos de TEMP a la estructura vacía en <code className="bg-gray-800 px-1 rounded">C:\ZX\UPDATES_TOSEC</code></p>
+                            <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => { setUpdateTargetCollection('FE'); setUpdatePreview(null); }} className={`px-4 py-2 rounded font-bold ${updateTargetCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE</button>
+                                    <button onClick={() => { setUpdateTargetCollection('TS'); setUpdatePreview(null); }} className={`px-4 py-2 rounded font-bold ${updateTargetCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS</button>
+                                    <button onClick={previewUpdatePackage} disabled={updateStatus.running || tempFiles.length === 0} className={`px-4 py-2 rounded font-bold flex items-center gap-2 ${tempFiles.length === 0 ? 'bg-gray-600 cursor-not-allowed' : 'bg-yellow-600 hover:bg-yellow-500'}`}>🔍 Ver destinos</button>
+                                    <button onClick={generateUpdatePackage} disabled={updateStatus.running || tempFiles.length === 0} className={`px-4 py-2 rounded font-bold flex items-center gap-2 ${updateStatus.running || tempFiles.length === 0 ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500'}`}>{updateStatus.running ? <><Icon name="loader" className="w-4 h-4 animate-spin" />Copiando...</> : <>📦 Copiar a {updateTargetCollection}</>}</button>
+                                    <button onClick={loadTempFiles} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Refrescar"><Icon name="refresh" className="w-4 h-4" /></button>
+                                </div>
+                                
+                                {updateStatus.error && <div className="p-2 bg-red-900/30 border border-red-500 rounded text-sm text-red-400">{updateStatus.error}</div>}
+                                
+                                {/* Vista previa de destinos */}
+                                {updatePreview && updatePreview.length > 0 && !updateStatus.done && (
+                                    <div className="flex-1 min-h-0 flex flex-col mt-4 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded">
+                                        <h3 className="font-bold text-sm mb-2 text-yellow-400">🔍 Vista previa de destinos para {updateTargetCollection}</h3>
+                                        <div className="flex-1 overflow-y-auto space-y-2">{updatePreview.map((f, i) => (
+                                            <div key={i} className={`p-2 rounded text-xs ${f.has_destinations ? 'bg-gray-800/50 border border-gray-700' : 'bg-red-900/20 border border-red-700/30'}`}>
+                                                <p className="font-medium text-white">{f.filename}</p>
+                                                {f.tosec_info && <p className="text-gray-500 text-xs">Título: {f.tosec_info.title} | Año: {f.tosec_info.year || '?'}</p>}
+                                                {f.dest_paths && f.dest_paths.length > 0 ? (
+                                                    <div className="mt-1 text-green-400">{f.dest_paths.map((p, j) => <p key={j} className="truncate">→ {p}</p>)}</div>
+                                                ) : (
+                                                    <p className="text-red-400 mt-1">{f.error || 'Sin destinos disponibles'}</p>
+                                                )}
+                                            </div>
+                                        ))}</div>
+                                    </div>
+                                )}
+                                
+                                {/* Resultados de copia */}
+                                {updateStatus.done && updateResults.length > 0 && (
+                                    <div className="flex-1 min-h-0 flex flex-col mt-4">
+                                        <h3 className="font-bold text-sm mb-2 text-green-400">✓ Archivos copiados ({updateResults.filter(r => r.success).length}/{updateResults.length})</h3>
+                                        <div className="flex-1 overflow-y-auto space-y-1">{updateResults.map((r, i) => (
+                                            <div key={i} className={`p-2 rounded text-xs ${r.success ? 'bg-green-900/20 border border-green-700/30' : 'bg-red-900/20 border border-red-700/30'}`}>
+                                                <p className="font-medium truncate">{r.filename}</p>
+                                                {r.dest_paths && r.dest_paths.length > 0 && r.dest_paths.map((p, j) => <p key={j} className="text-gray-400 truncate">→ {p}</p>)}
+                                                {r.error && <p className="text-red-400">{r.error}</p>}
+                                            </div>
+                                        ))}</div>
+                                    </div>
+                                )}
+                                
+                                {/* Archivos en TEMP */}
+                                <div className="mt-4 p-3 bg-gray-800/50 rounded border border-gray-700">
+                                    <h4 className="font-bold text-xs text-purple-400 mb-2">📁 Archivos en TEMP ({tempFiles.length})</h4>
+                                    {tempFiles.length === 0 ? <p className="text-gray-500 text-xs">No hay archivos en TEMP</p> :
+                                    <div className="max-h-64 overflow-y-auto text-xs space-y-0.5">{tempFiles.map((f, i) => (<div key={i} className="truncate text-gray-300 py-0.5 px-1 hover:bg-gray-700/50 rounded">{f.name}</div>))}</div>}
+                                </div>
+                            </div>
+                        </div>)}
+                        
                         {activeTab === 'compress' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="archive" className="w-5 h-5 text-orange-400" />Comprimir TOSEC</h2><div className="space-y-4 max-w-xl"><div><label className="block text-sm mb-1">Colección</label><div className="flex gap-2"><button onClick={() => setCompressCollection('FE')} className={`px-4 py-2 rounded ${compressCollection === 'FE' ? 'bg-blue-600' : 'bg-gray-700'}`}>FE</button><button onClick={() => setCompressCollection('TS')} className={`px-4 py-2 rounded ${compressCollection === 'TS' ? 'bg-cyan-600' : 'bg-gray-700'}`}>TS</button></div></div><div><label className="block text-sm mb-1">Destino</label><input type="text" value={compressDestPath} onChange={(e) => setCompressDestPath(e.target.value)} className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded" /></div><div><label className="block text-sm mb-1">Tamaño volumen</label><div className="flex gap-2"><button onClick={() => setCompressVolumeSize(2048)} className={`px-4 py-2 rounded ${compressVolumeSize === 2048 ? 'bg-purple-600' : 'bg-gray-700'}`}>2 GB (FAT32)</button><button onClick={() => setCompressVolumeSize(4096)} className={`px-4 py-2 rounded ${compressVolumeSize === 4096 ? 'bg-purple-600' : 'bg-gray-700'}`}>4 GB (DVD)</button></div></div><div><label className="block text-sm mb-1">Formato</label><div className="flex gap-2">{['zip', '7z'].map(f => (<button key={f} onClick={() => setCompressFormat(f)} className={`px-3 py-1 rounded ${compressFormat === f ? 'bg-purple-600' : 'bg-gray-700'}`}>{f.toUpperCase()}</button>))}</div></div>
-                            {compressProgress && (<div className="p-3 bg-gray-800/50 rounded border border-gray-700"><div className="flex justify-between text-sm mb-2"><span className="text-gray-300">{compressProgress.progress}</span><span className="text-cyan-400 font-bold">{compressProgress.percent}%</span></div><div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden"><div className="bg-gradient-to-r from-purple-500 to-cyan-500 h-4 rounded-full transition-all duration-300 flex items-center justify-center" style={{ width: `${compressProgress.percent}%` }}><span className="text-xs text-white font-bold drop-shadow">{compressProgress.percent > 5 ? `${compressProgress.percent}%` : ''}</span></div></div></div>)}
-                            <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Comprimir'}</button></div></div>)}
+                            {compressProgress && (<div className="p-3 bg-gray-800/50 rounded border border-gray-700"><div className="text-sm mb-2 text-gray-300">{compressProgress.progress}</div><div className="w-full bg-gray-700 rounded-full h-5 overflow-hidden"><div className="bg-gradient-to-r from-purple-500 to-cyan-500 h-5 rounded-full transition-all duration-300 flex items-center justify-center" style={{ width: `${compressProgress.percent}%` }}><span className="text-xs text-white font-bold drop-shadow">{compressProgress.percent}%</span></div></div></div>)}
+                            <div className="flex gap-2">
+                                <button onClick={startCompression} disabled={compressing} className={`px-4 py-2 rounded flex items-center gap-2 ${compressing ? 'bg-gray-600' : 'bg-orange-600 hover:bg-orange-500'}`}>{compressing ? <Icon name="loader" className="w-4 h-4 animate-spin" /> : <Icon name="archive" className="w-4 h-4" />}{compressing ? 'Comprimiendo...' : 'Comprimir'}</button>
+                                {compressing && <button onClick={cancelCompression} className="px-4 py-2 rounded flex items-center gap-2 bg-red-600 hover:bg-red-500"><Icon name="x" className="w-4 h-4" />Cancelar</button>}
+                            </div></div></div>)}
+
 
                         {activeTab === 'multicopy' && (
                             <div className="h-full flex flex-col bg-black/30 border border-purple-500/30 rounded p-3 overflow-hidden">
@@ -787,28 +1331,36 @@
                                             {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-6 h-6 text-blue-400 animate-spin" /></div> :
                                                 (mcSourceItems || []).map((item, i) => {
                                                     if (!item) return null;
+                                                    const isFile = item.type === 'file';
+                                                    const canEmulate = isFile && isEmulable(item.name);
                                                     return (
-                                                        <div key={i} onClick={() => {
-                                                            if (item.type === 'folder') {
-                                                                setMcSourcePath([...mcSourcePath, item.full_path]);
-                                                            } else {
-                                                                // Toggle selection
-                                                                if (mcSelectedFiles.includes(item.full_path)) {
-                                                                    setMcSelectedFiles(mcSelectedFiles.filter(f => f !== item.full_path));
+                                                        <div key={i} className={`p-1.5 rounded text-xs flex items-center gap-2 group ${mcSelectedFiles.includes(item.full_path) ? 'bg-blue-900/50 border border-blue-500/50' : 'hover:bg-gray-700/50 border border-transparent'}`}>
+                                                            <div className="flex-1 flex items-center gap-2 cursor-pointer" onClick={() => {
+                                                                if (item.type === 'folder') {
+                                                                    setMcSourcePath([...mcSourcePath, item.full_path]);
                                                                 } else {
-                                                                    setMcSelectedFiles([...mcSelectedFiles, item.full_path]);
+                                                                    if (mcSelectedFiles.includes(item.full_path)) {
+                                                                        setMcSelectedFiles(mcSelectedFiles.filter(f => f !== item.full_path));
+                                                                    } else {
+                                                                        setMcSelectedFiles([...mcSelectedFiles, item.full_path]);
+                                                                    }
                                                                 }
-                                                            }
-                                                        }} className={`p-1.5 rounded text-xs flex items-center gap-2 cursor-pointer ${mcSelectedFiles.includes(item.full_path) ? 'bg-blue-900/50 border border-blue-500/50' : 'hover:bg-gray-700/50 border border-transparent'}`}>
-                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
-                                                            <span className="truncate flex-1">{item.name || 'Unknown'}</span>
-                                                            {item.type === 'file' && <span className="text-gray-500">{item.size ? (item.size / 1024).toFixed(0) : '0'}KB</span>}
+                                                            }}>
+                                                                <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
+                                                                <span className="truncate flex-1">{item.name || 'Unknown'}</span>
+                                                                {isFile && <span className="text-gray-500">{item.size ? (item.size / 1024).toFixed(0) : '0'}KB</span>}
+                                                            </div>
+                                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                {canEmulate && <button onClick={(e) => { e.stopPropagation(); mcEmulateItem(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}
+                                                                <button onClick={(e) => { e.stopPropagation(); mcRenameItem(item.full_path, item.name); }} className="p-1 bg-blue-600 hover:bg-blue-500 rounded" title="Renombrar"><Icon name="edit" className="w-3 h-3" /></button>
+                                                                <button onClick={(e) => { e.stopPropagation(); mcDeleteItem(item.full_path, item.name, item.type === 'folder'); }} className="p-1 bg-red-600 hover:bg-red-500 rounded" title="Eliminar"><Icon name="trash" className="w-3 h-3" /></button>
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
                                         </div>
                                         {/* Selected Files Area */}
-                                        <div className="h-32 border-t border-gray-700 bg-gray-900/30 flex flex-col">
+                                        <div className="h-80 border-t border-gray-700 bg-gray-900/30 flex flex-col">
                                             <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
                                                 <span className="text-xs font-bold text-yellow-400">Seleccionados ({mcSelectedFiles.length})</span>
                                                 {mcSelectedFiles.length > 0 && <button onClick={() => setMcSelectedFiles([])} className="text-xs text-red-400 hover:text-red-300">Limpiar</button>}
@@ -834,8 +1386,8 @@
                                     <div className="flex-1 flex flex-col bg-gray-800/30 rounded border border-gray-700 overflow-hidden">
                                         <div className="p-2 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
                                             <div className="flex gap-1">
-                                                {['FE', 'TS'].map(c => (
-                                                    <button key={c} onClick={() => { setMcDestCollection(c); setMcDestPath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcDestCollection === c ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c}</button>
+                                                {['FE', 'TS', 'UPD'].map(c => (
+                                                    <button key={c} onClick={() => { setMcDestCollection(c); setMcDestPath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcDestCollection === c ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c === 'UPD' ? 'UPDATES' : c}</button>
                                                 ))}
                                             </div>
                                             <span className="text-xs text-gray-400">Destino</span>
@@ -869,7 +1421,7 @@
                                         <div className="p-2 bg-gray-900/50 border-t border-gray-700">
                                             <div className="text-xs text-gray-400 mb-1">Carpeta destino actual:</div>
                                             <div className="text-xs font-mono bg-black/30 p-1.5 rounded border border-gray-700 truncate text-cyan-300">
-                                                {mcDestPath.length > 0 ? mcDestPath[mcDestPath.length - 1] : `[Raíz de ${mcDestCollection}]`}
+                                                {mcDestPath.length > 0 ? mcDestPath[mcDestPath.length - 1] : `[Raíz de ${mcDestCollection === 'UPD' ? 'UPDATES_TOSEC' : mcDestCollection}]`}
                                             </div>
                                         </div>
                                     </div>
@@ -883,24 +1435,91 @@
                             </div>
                         )}
 
-                        {activeTab === 'nas' && (<div className="h-full overflow-auto bg-black/30 border border-purple-500/30 rounded p-3"><h2 className="font-bold flex items-center gap-2 mb-4"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup NAS - revisteo.synology.me</h2><div className="grid grid-cols-2 gap-4">
+                        {activeTab === 'nas' && (<div className="h-full flex flex-col overflow-hidden bg-black/30 border border-purple-500/30 rounded p-3">
+                            <h2 className="font-bold flex items-center gap-2 mb-4 shrink-0"><Icon name="server" className="w-5 h-5 text-blue-400" />Backup NAS - revisteo.synology.me</h2>
+                            <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
                             {/* Archivos locales */}
-                            <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><div className="flex justify-between items-center mb-2"><h3 className="font-semibold text-sm">C:\ZX\Backups\</h3><div className="flex gap-1"><button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs">🔄</button><button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button><button onClick={deselectAllBackupFiles} className="px-2 py-1 bg-gray-600 rounded text-xs">Ninguno</button></div></div><div className="max-h-64 overflow-y-auto space-y-1">{backupFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-4">Sin archivos</p> : backupFiles.map((f, i) => (<label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50"><input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} /><Icon name="archive" className="w-4 h-4 text-orange-400" /><span className="flex-1 truncate text-sm">{f.name}</span><span className="text-xs text-gray-400">{formatSize(f.size)}</span></label>))}</div>{selectedBackupFiles.length > 0 && <p className="mt-2 text-sm text-yellow-400">{selectedBackupFiles.length} seleccionados ({formatSize(backupFiles.filter(f => selectedBackupFiles.includes(f.name)).reduce((a, b) => a + b.size, 0))})</p>}</div>
+                            <div className="flex flex-col bg-gray-800/50 border border-gray-700 rounded p-3 min-h-0">
+                                <div className="flex justify-between items-center mb-2 shrink-0">
+                                    <h3 className="font-semibold text-sm">C:\ZX\Backups\</h3>
+                                    <div className="flex gap-1">
+                                        <button onClick={loadBackupFiles} className="px-2 py-1 bg-gray-700 rounded text-xs">🔄</button>
+                                        <button onClick={selectAllBackupFiles} className="px-2 py-1 bg-purple-600 rounded text-xs">Todos</button>
+                                        <button onClick={deselectAllBackupFiles} className="px-2 py-1 bg-gray-600 rounded text-xs">Ninguno</button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto space-y-1">
+                                    {backupFiles.length === 0 ? <p className="text-gray-500 text-sm text-center py-4">Sin archivos</p> : backupFiles.map((f, i) => (
+                                        <label key={i} className="flex items-center gap-2 p-2 bg-gray-900/50 rounded cursor-pointer hover:bg-gray-700/50">
+                                            <input type="checkbox" checked={selectedBackupFiles.includes(f.name)} onChange={() => toggleBackupFile(f.name)} />
+                                            <Icon name="archive" className="w-4 h-4 text-orange-400" />
+                                            <span className="flex-1 truncate text-sm">{f.name}</span>
+                                            <span className="text-xs text-gray-400">{formatSize(f.size)}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                {selectedBackupFiles.length > 0 && <p className="mt-2 text-sm text-yellow-400 shrink-0">{selectedBackupFiles.length} seleccionados ({formatSize(backupFiles.filter(f => selectedBackupFiles.includes(f.name)).reduce((a, b) => a + b.size, 0))})</p>}
+                            </div>
 
                             {/* Conexión FTP */}
-                            <div className="bg-gray-800/50 border border-gray-700 rounded p-3"><h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3><div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-2 text-xs"><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Servidor:</span> <span className="text-cyan-400">revisteo.synology.me</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Usuario:</span> <span className="text-green-400">Flunky</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Carpeta:</span> <span className="text-yellow-400">/ZxTosec</span></div><div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Protocolo:</span> <span className="text-purple-400">FTPS</span></div></div>
-                                <div><label className="block text-xs text-gray-400 mb-1">Contraseña</label><div className="flex gap-2"><input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded" /><button onClick={testFtpConnection} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Probar conexión"><Icon name="wifi" className="w-4 h-4" /></button></div></div>
-                                {connectionStatus && (<div className={`p-2 rounded text-xs ${connectionStatus.status === 'ok' ? 'bg-green-900/30 border border-green-500/30 text-green-300' : connectionStatus.status === 'error' ? 'bg-red-900/30 border border-red-500/30 text-red-300' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300'}`}>{connectionStatus.message}</div>)}
-                                {currentUploadFile && (<div className="p-2 bg-blue-900/30 border border-blue-500/30 rounded text-xs"><p className="text-blue-300 mb-1">Subiendo {currentUploadFile.index}/{currentUploadFile.total}</p><p className="text-white font-medium truncate">{currentUploadFile.name}</p><p className="text-gray-400">{formatSize(currentUploadFile.size)}</p></div>)}
-                                {uploadProgress.length > 0 && (<div className="max-h-32 overflow-y-auto space-y-1">{uploadProgress.map((p, i) => (<div key={i} className={`p-1 rounded text-xs flex items-center gap-2 ${p.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}><span className={p.success ? 'text-green-400' : 'text-red-400'}>{p.success ? '✓' : '✗'}</span><span className="truncate flex-1">{p.filename}</span>{p.success && <span className="text-gray-400">{p.speed} MB/s</span>}{!p.success && <span className="text-red-400 text-xs">{p.error}</span>}</div>))}</div>)}
-                                <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0} className={`w-full px-4 py-2 rounded flex items-center justify-center gap-2 ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>{uploading ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="upload" className="w-4 h-4" />}{uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}</button>
-                            </div></div>
+                            <div className="flex flex-col bg-gray-800/50 border border-gray-700 rounded p-3 min-h-0">
+                                <h3 className="font-semibold text-sm mb-3 flex items-center gap-2 shrink-0"><Icon name="server" className="w-4 h-4" />Servidor NAS</h3>
+                                <div className="flex-1 overflow-y-auto space-y-3">
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Servidor:</span> <span className="text-cyan-400">revisteo.synology.me</span></div>
+                                        <div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Usuario:</span> <span className="text-green-400">Flunky</span></div>
+                                        <div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Carpeta:</span> <span className="text-yellow-400">/ZxTosec</span></div>
+                                        <div className="p-2 bg-gray-900/50 rounded"><span className="text-gray-400">Protocolo:</span> <span className="text-purple-400">FTPS</span></div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 mb-1">Contraseña</label>
+                                        <div className="flex gap-2">
+                                            <input type="password" value={ftpPassword} onChange={(e) => setFtpPassword(e.target.value)} placeholder="••••••••" className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded" />
+                                            <button onClick={testFtpConnection} className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded" title="Probar conexión"><Icon name="wifi" className="w-4 h-4" /></button>
+                                        </div>
+                                    </div>
+                                    {connectionStatus && (<div className={`p-2 rounded text-xs ${connectionStatus.status === 'ok' ? 'bg-green-900/30 border border-green-500/30 text-green-300' : connectionStatus.status === 'error' ? 'bg-red-900/30 border border-red-500/30 text-red-300' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300'}`}>{connectionStatus.message}</div>)}
+                                    {currentUploadFile && (<div className="p-3 bg-blue-900/30 border border-blue-500/30 rounded"><p className="text-blue-300 mb-1 text-sm">Subiendo {currentUploadFile.index}/{currentUploadFile.total}</p><p className="text-white font-medium truncate">{currentUploadFile.name}</p><p className="text-gray-400 text-sm">{formatSize(currentUploadFile.size)}</p></div>)}
+                                    {uploadProgress.length > 0 && (<div className="flex-1 overflow-y-auto space-y-1 max-h-64">{uploadProgress.map((p, i) => (<div key={i} className={`p-2 rounded text-xs flex items-center gap-2 ${p.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}><span className={p.success ? 'text-green-400' : 'text-red-400'}>{p.success ? '✓' : '✗'}</span><span className="truncate flex-1">{p.filename}</span>{p.success && <span className="text-gray-400">{p.speed} MB/s</span>}{!p.success && <span className="text-red-400 text-xs">{p.error}</span>}</div>))}</div>)}
+                                </div>
+                                <button onClick={uploadToNAS} disabled={uploading || selectedBackupFiles.length === 0} className={`w-full px-4 py-3 rounded flex items-center justify-center gap-2 mt-3 shrink-0 text-lg font-bold ${uploading ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-500'}`}>{uploading ? <Icon name="loader" className="w-5 h-5" /> : <Icon name="upload" className="w-5 h-5" />}{uploading ? 'Subiendo...' : `Subir ${selectedBackupFiles.length} archivo(s)`}</button>
+                            </div>
                         </div></div>)
                         }
                     </div >
 
-                    {showProcessModal && selectedFile && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-2xl w-full max-h-[70vh] flex flex-col"><div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}>✕</button></div><div className="flex-1 overflow-y-auto p-3">{['FE', 'TS'].map(col => (<div key={col} className="mb-2 border border-gray-700 rounded p-2"><h4 className="font-semibold text-xs mb-1">{col}</h4><div className="space-y-0.5 max-h-28 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} /><span>{p}</span></label>))}</div></div>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div></div></div>)}
+                    {showProcessModal && selectedFile && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-3xl w-full max-h-[85vh] flex flex-col"><div className="p-3 border-b border-purple-500/20 flex justify-between"><div><h3 className="font-bold text-cyan-400 text-sm">Procesar</h3><p className="text-xs text-gray-400 truncate max-w-xl">{selectedFile.name}</p></div><button onClick={() => setShowProcessModal(false)}>✕</button></div><div className="flex-1 overflow-y-auto p-3">{['FE', 'TS'].map(col => (<div key={col} className="mb-3 border border-gray-700 rounded p-2"><h4 className="font-semibold text-xs mb-2 text-purple-400">{col}</h4><div className="space-y-1 max-h-48 overflow-y-auto">{selectedFile.suggested_paths?.[col]?.map((p, i) => (<label key={i} className="flex items-start gap-2 p-1.5 hover:bg-gray-800 rounded text-xs cursor-pointer"><input type="checkbox" checked={selectedDestinations[col]?.includes(p)} onChange={() => toggleDestination(col, p)} className="mt-0.5" /><span className="break-all">{p}</span></label>))}</div></div>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-end gap-2"><button onClick={() => setShowProcessModal(false)} className="px-3 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={processFile} disabled={processing} className="px-3 py-1 bg-green-600 rounded text-xs">{processing ? 'Copiando...' : 'Copiar'}</button></div></div></div>)}
+                    
+                    {/* Modal de Búsqueda Universal */}
+                    {showSearchModal && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-yellow-500/30 rounded max-w-4xl w-full max-h-[85vh] flex flex-col">
+                        <div className="p-4 border-b border-yellow-500/20 flex items-center gap-3">
+                            <Icon name="search" className="w-5 h-5 text-yellow-400" />
+                            <div className="flex-1 relative">
+                                <input type="text" placeholder="Buscar archivos en FE y TS..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && performSearch(searchQuery)} className="w-full px-3 py-2 pr-8 bg-gray-800 border border-gray-700 rounded text-sm" autoFocus />
+                                {searchQuery && <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white" title="Limpiar búsqueda">✕</button>}
+                            </div>
+                            <button onClick={() => performSearch(searchQuery)} disabled={searching} className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded text-sm font-bold">{searching ? 'Buscando...' : 'Buscar'}</button>
+                            <button onClick={() => setShowSearchModal(false)} className="px-3 py-2 bg-red-700 hover:bg-red-600 rounded text-sm">Cerrar</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {searchResults.length === 0 && !searching && searchQuery && <p className="text-gray-500 text-center py-8">No se encontraron resultados</p>}
+                            {searchResults.length > 0 && <p className="text-xs text-gray-400 mb-2">{searchResults.length} resultados encontrados</p>}
+                            <div className="space-y-1">{searchResults.slice(0, 200).map((r, i) => (
+                                <div key={i} className="p-2 bg-gray-800/50 border border-gray-700/50 hover:border-yellow-500/50 rounded text-xs flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${r.collection === 'FE' ? 'bg-blue-600' : 'bg-cyan-600'}`}>{r.collection}</span>
+                                    <Icon name="file" className="w-3 h-3 text-green-400" />
+                                    <span className="flex-1 truncate font-medium cursor-pointer hover:text-yellow-400" onClick={() => navigateToSearchResult(r)} title="Ir a ubicación">{r.name}</span>
+                                    <span className="text-gray-500 truncate max-w-xs hidden md:inline">{r.relative_path}</span>
+                                    <div className="flex gap-1 ml-2">
+                                        {isEmulable(r.name) && <button onClick={(e) => { e.stopPropagation(); emulateSearchResult(r); }} className="px-2 py-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}
+                                        <button onClick={(e) => { e.stopPropagation(); copySearchResultToTemp(r); }} className="px-2 py-1 bg-orange-600 hover:bg-orange-500 rounded" title="Copiar a TEMP"><Icon name="copy" className="w-3 h-3" /></button>
+                                        <button onClick={() => navigateToSearchResult(r)} className="px-2 py-1 bg-purple-600 hover:bg-purple-500 rounded" title="Ir a carpeta"><Icon name="folder" className="w-3 h-3" /></button>
+                                    </div>
+                                </div>
+                            ))}</div>
+                            {searchResults.length > 200 && <p className="text-xs text-yellow-500 mt-2 text-center">Mostrando 200 de {searchResults.length} resultados</p>}
+                        </div>
+                    </div></div>)}
                     {showFolderBrowser && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded max-w-xl w-full max-h-[60vh] flex flex-col"><div className="p-3 border-b border-purple-500/20"><div className="flex justify-between mb-2"><h3 className="font-bold">Seleccionar destino</h3><button onClick={() => setShowFolderBrowser(false)}>✕</button></div><div className="flex gap-1">{['FE', 'TS'].map(c => (<button key={c} onClick={() => { setBrowserCollection(c); setBrowserPath([]); loadBrowserFolders(c, ''); }} className={`px-2 py-1 rounded text-xs ${browserCollection === c ? 'bg-purple-600' : 'bg-gray-700'}`}>{c}</button>))}</div></div><div className="px-3 py-1 bg-gray-800/50 text-xs"><button onClick={() => { setBrowserPath([]); loadBrowserFolders(browserCollection, ''); }} className="text-purple-400">{browserCollection}:/</button>{browserPath.map((s, i) => (<button key={i} onClick={() => { const np = browserPath.slice(0, i + 1); setBrowserPath(np); loadBrowserFolders(browserCollection, np.join('/')); }} className="text-purple-400">{s}/</button>))}</div><div className="flex-1 overflow-y-auto p-2 space-y-1">{browserFolders.map((f, i) => (<button key={i} onClick={() => { setBrowserPath([...browserPath, f.name]); loadBrowserFolders(browserCollection, [...browserPath, f.name].join('/')); }} className="w-full p-2 bg-gray-800/50 rounded hover:bg-gray-700/50 text-left text-xs flex items-center gap-2"><Icon name="folder" className="w-3 h-3 text-cyan-400" />{f.name}{f.has_subfolders && <span className="ml-auto text-gray-500">→</span>}</button>))}</div><div className="p-3 border-t border-purple-500/20 flex justify-between"><span className="text-xs bg-gray-800 px-2 py-1 rounded">{browserCollection}:{browserPath.join('/')}</span><div className="flex gap-1"><button onClick={() => setShowFolderBrowser(false)} className="px-2 py-1 bg-gray-700 rounded text-xs">Cancelar</button><button onClick={selectFolderForRule} className="px-2 py-1 bg-green-600 rounded text-xs">OK</button></div></div></div></div>)}
 
                     {showNewFolderModal && (<div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50"><div className="bg-gray-900 border border-purple-500/30 rounded p-4 w-96"><div className="flex justify-between mb-4"><h3 className="font-bold flex items-center gap-2"><Icon name="plus" className="w-4 h-4 text-green-400" />Nueva carpeta en {newFolderCollection}</h3><button onClick={() => setShowNewFolderModal(false)}>✕</button></div><p className="text-xs text-gray-400 mb-2">Ruta: {newFolderCollection}:/{(newFolderCollection === 'FE' ? fePath : tsPath).join('/')}/</p><input type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createNewFolder()} placeholder="Nombre de la carpeta" className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-4" autoFocus /><div className="flex justify-end gap-2"><button onClick={() => setShowNewFolderModal(false)} className="px-3 py-1.5 bg-gray-700 rounded text-sm">Cancelar</button><button onClick={createNewFolder} disabled={!newFolderName.trim()} className={`px-3 py-1.5 rounded text-sm ${newFolderName.trim() ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 cursor-not-allowed'}`}>Crear</button></div></div></div>)}

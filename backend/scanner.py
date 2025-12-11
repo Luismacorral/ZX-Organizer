@@ -9,18 +9,21 @@ class DirectoryScanner:
     """Clase para escanear y analizar la estructura de carpetas TOSEC"""
     
     VALID_EXTENSIONS = {'.tap', '.tzx', '.z80', '.sna', '.dsk', '.trd', '.scl', '.img', '.zip'}
-    COMMON_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.txt', '.doc', '.docx', '.xls', '.xlsx'}
+    # Extensiones para procesamiento TOSEC (sin .zip ni archivos comprimidos)
+    TOSEC_EXTENSIONS = {'.tap', '.tzx', '.z80', '.sna', '.dsk', '.trd', '.scl', '.img'}
+    # Archivos comunes que se muestran pero no se procesan automáticamente
+    COMMON_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.txt', '.doc', '.docx', '.xls', '.xlsx', '.7z', '.rar', '.tar', '.gz'}
     ALL_DISPLAYABLE = VALID_EXTENSIONS | COMMON_EXTENSIONS
     
     FILE_TYPES = {
-        '.tap': 'TAP',
-        '.tzx': 'TZX',
-        '.z80': 'Z80',
-        '.sna': 'SNA',
-        '.dsk': 'DSK',
-        '.trd': 'TRD',
-        '.scl': 'SCL',
-        '.rom': 'ROM',
+        '.tap': 'TAPs',
+        '.tzx': 'TZXs',
+        '.z80': 'Z80s',
+        '.sna': 'SNAs',
+        '.dsk': 'DISCOS',
+        '.trd': 'DISCOS',
+        '.scl': 'DISCOS',
+        '.rom': 'ROMs',
         '.img': 'OTROS',
         '.zip': 'OTROS'
     }
@@ -78,7 +81,7 @@ class DirectoryScanner:
     
     def get_multicopy_roots(self) -> Dict[str, Any]:
         """
-        Devuelve la lista inicial de las tres carpetas raíz para la navegación
+        Devuelve la lista inicial de las carpetas raíz para la navegación
         de la pestaña Multicopia.
         """
         # Para TS, usamos la ruta completa incluyendo TOSEC_v40.9 para ser consistente
@@ -90,7 +93,8 @@ class DirectoryScanner:
         root_paths = {
             'TEMP': self.config.get('TEMP_PATH', 'c:\\ZX\\TEMP\\'), 
             'FE': self.config.get('FE_PATH', 'c:\\ZX\\ZX_v40.9_FE\\'),
-            'TS': ts_full_path
+            'TS': ts_full_path,
+            'UPD': self.config.get('UPDATES_TOSEC_PATH', 'c:\\ZX\\UPDATES_TOSEC\\')
         }
         
         initial_items = []
@@ -232,19 +236,24 @@ class DirectoryScanner:
                         })
                         file_count += 1
             
+            # Ordenar: primero carpetas, luego archivos (ambos alfabéticamente)
+            folders = sorted([i for i in items if i['type'] == 'folder'], key=lambda x: x['name'].lower())
+            files = sorted([i for i in items if i['type'] == 'file'], key=lambda x: x['name'].lower())
+            items_sorted = folders + files
+            
             return {
                 'path': folder_path,
-                'items': items,
+                'items': items_sorted,
                 'file_count': file_count,
                 'folder_count': folder_count,
-                'total_items': len(items)
+                'total_items': len(items_sorted)
             }
         
         except Exception as e:
             return {'error': str(e), 'items': []}
 
     def scan_temp_files(self, temp_path: str) -> Dict[str, Any]:
-        """Escanea archivos en TEMP"""
+        """Escanea archivos en TEMP - solo archivos TOSEC válidos"""
         if not os.path.exists(temp_path):
             return {'error': 'Carpeta TEMP no encontrada', 'files': []}
         
@@ -257,7 +266,8 @@ class DirectoryScanner:
                 if os.path.isfile(item_path):
                     ext = os.path.splitext(item)[1].lower()
                     
-                    if ext in self.VALID_EXTENSIONS:
+                    # Solo mostrar archivos TOSEC válidos (sin .zip, .7z, .txt, etc.)
+                    if ext in self.TOSEC_EXTENSIONS:
                         tosec_info = self._parse_tosec_filename(item)
                         suggested_paths = self._suggest_destination(tosec_info, ext, item)
                         
@@ -271,25 +281,9 @@ class DirectoryScanner:
                             'is_spectrum': True,
                             'is_common': False,
                             'can_delete': True,
-                            'can_emulate': True,
+                            'can_emulate': ext in {'.tap', '.tzx', '.z80', '.sna'},
                             'full_path': item_path,
                             'status': 'pending'
-                        })
-                    
-                    elif ext in self.COMMON_EXTENSIONS:
-                        files.append({
-                            'name': item,
-                            'extension': ext,
-                            'file_type': ext.upper().replace('.', ''),
-                            'size': os.path.getsize(item_path),
-                            'tosec_info': None,
-                            'suggested_paths': {'FE': [], 'TS': []},
-                            'is_spectrum': False,
-                            'is_common': True,
-                            'can_delete': True,
-                            'can_open': True,
-                            'full_path': item_path,
-                            'status': 'other'
                         })
             
             return {
@@ -331,6 +325,62 @@ class DirectoryScanner:
             base_path = self.config['FE_PATH']
         else:  # TS
             base_path = os.path.join(self.config['TS_PATH'], self.config.get('TS_TOSEC_SUBPATH', 'TOSEC_v40.9'))
+        
+        for dest_path in destinations:
+            try:
+                full_dest_path = os.path.join(base_path, dest_path)
+                dest_dir = os.path.dirname(full_dest_path)
+                
+                os.makedirs(dest_dir, exist_ok=True)
+                shutil.copy2(source_file, full_dest_path)
+                results['success'].append(dest_path)
+                
+            except Exception as e:
+                results['errors'].append(f"Error copiando a {dest_path}: {str(e)}")
+        
+        return results
+    
+    def copy_file_to_updates_tosec(self, source_file: str, destinations: List[str], collection: str, updates_base: str) -> Dict[str, Any]:
+        """Copia un archivo a UPDATES_TOSEC (misma lógica que copy_file_to_destinations pero con ruta base diferente)"""
+        results = {
+            'success': [],
+            'errors': [],
+            'file': os.path.basename(source_file)
+        }
+        
+        if not os.path.exists(source_file):
+            results['errors'].append(f"Archivo origen no existe: {source_file}")
+            return results
+        
+        # Determinar carpeta base dentro de UPDATES_TOSEC
+        if collection == 'FE':
+            # Buscar carpeta FE en UPDATES_TOSEC (ej: ZX_v41_FE)
+            base_path = None
+            if os.path.exists(updates_base):
+                for item in os.listdir(updates_base):
+                    if 'FE' in item.upper() and os.path.isdir(os.path.join(updates_base, item)):
+                        base_path = os.path.join(updates_base, item)
+                        break
+            if not base_path:
+                results['errors'].append(f"No se encontró carpeta FE en {updates_base}")
+                return results
+        else:  # TS
+            # Buscar carpeta TS en UPDATES_TOSEC (ej: ZX_v41_TS)
+            base_path = None
+            if os.path.exists(updates_base):
+                for item in os.listdir(updates_base):
+                    if 'TS' in item.upper() and os.path.isdir(os.path.join(updates_base, item)):
+                        ts_folder = os.path.join(updates_base, item)
+                        # Añadir subcarpeta TOSEC si existe
+                        tosec_subpath = self.config.get('TS_TOSEC_SUBPATH', 'TOSEC_v41')
+                        if os.path.exists(os.path.join(ts_folder, tosec_subpath)):
+                            base_path = os.path.join(ts_folder, tosec_subpath)
+                        else:
+                            base_path = ts_folder
+                        break
+            if not base_path:
+                results['errors'].append(f"No se encontró carpeta TS en {updates_base}")
+                return results
         
         for dest_path in destinations:
             try:
@@ -413,12 +463,12 @@ class DirectoryScanner:
     def _is_range_folder(self, folder_name: str) -> bool:
         """
         Detecta carpeta de rango alfabético REAL.
-        Un rango válido tiene formato: "AAA - AZZ" o "A - AZ" o "123 - L"
+        Un rango válido tiene formato: "AAA - AZZ" o "A - ADVENTURER" o "ASTONISHING - AE"
         DEBE tener espacios alrededor del guión para distinguir de nombres como "R-TYPE"
-        Las partes deben ser cortas (1-6 caracteres) y sin espacios internos.
-        NO detecta nombres de juegos como "QUIVIRA - THE ADVENTURE"
+        Ambas partes pueden tener hasta 12 caracteres (sin espacios internos).
+        NO detecta nombres de juegos como "QUIVIRA - THE ADVENTURE" (que tienen espacios)
         """
-        match = re.match(r'^([A-Z0-9]{1,6})\s+-\s+([A-Z0-9]{1,6})$', folder_name, re.IGNORECASE)
+        match = re.match(r'^([A-Z0-9]{1,12})\s+-\s+([A-Z0-9]{1,12})$', folder_name, re.IGNORECASE)
         return bool(match)
     
     def _parse_range_folder(self, folder_name: str) -> tuple:
@@ -435,6 +485,43 @@ class DirectoryScanner:
             if s1[i] != s2[i]:
                 return s1[:i]
         return s1[:min_len]
+
+    def _find_game_folder(self, base_path: str, title: str) -> Optional[str]:
+        """
+        Busca la carpeta específica del juego dentro de un directorio.
+        SOLO devuelve coincidencia EXACTA para evitar meter archivos en carpetas incorrectas.
+        Si no existe la carpeta exacta, devuelve None para que se cree una nueva.
+        """
+        if not os.path.exists(base_path):
+            return None
+        
+        try:
+            subfolders = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+            
+            if not subfolders:
+                return None
+            
+            title_upper = title.upper().strip()
+            
+            for folder in subfolders:
+                # Ignorar carpetas de rango
+                if self._is_range_folder(folder):
+                    continue
+                
+                # Extraer nombre limpio de la carpeta (quitar corchetes si los tiene)
+                folder_name = folder.strip('[]').upper().strip()
+                
+                # SOLO coincidencia exacta
+                if folder_name == title_upper:
+                    return folder
+            
+            # No se encontró coincidencia exacta
+            return None
+            
+        except (PermissionError, OSError):
+            pass
+        
+        return None
 
     def _find_range_folder(self, base_path: str, title: str) -> Optional[str]:
         """Busca carpeta de rango correcta con lógica LCP"""
@@ -658,7 +745,15 @@ class DirectoryScanner:
         
         # === DESTINOS FE ===
         suggestions['FE'].append(f"00 TOSEC ALL/ALFABETO TOSEC/{letter}/{filename}")
-        suggestions['FE'].append(f"00 TOSEC ALL/CARPETAS/{letter}/{game_folder}/{filename}")
+        
+        # 00 TOSEC ALL/CARPETAS - Buscar carpeta del juego
+        fe_carpetas_path = os.path.join(self.config['FE_PATH'], "00 TOSEC ALL/CARPETAS", letter)
+        fe_game_folder = self._find_game_folder(fe_carpetas_path, title)
+        if fe_game_folder:
+            suggestions['FE'].append(f"00 TOSEC ALL/CARPETAS/{letter}/{fe_game_folder}/{filename}")
+        else:
+            suggestions['FE'].append(f"00 TOSEC ALL/CARPETAS/{letter}/{game_folder}/{filename}")
+        
         suggestions['FE'].append(f"00 TOSEC ALL/TIPOS DE ARCHIVO/{file_type}/{letter}/{filename}")
         
         for year in years:
@@ -672,23 +767,43 @@ class DirectoryScanner:
             fe_classic_path = os.path.join(self.config['FE_PATH'], "02 CLASICOS/ALFABETO CLASICOS", letter, file_type)
             range_folder = self._find_range_folder(fe_classic_path, title)
             if range_folder:
-                suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
+                # Buscar subcarpeta del juego dentro del rango
+                game_subfolder = self._find_game_folder(os.path.join(fe_classic_path, range_folder), title)
+                if game_subfolder:
+                    suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
             else:
-                suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
+                # Buscar subcarpeta del juego directamente
+                game_subfolder = self._find_game_folder(fe_classic_path, title)
+                if game_subfolder:
+                    suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['FE'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
         
         if any(1994 <= y <= 2025 for y in years):
             suggestions['FE'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{filename}")
         
         # === DESTINOS TS ===
-        ts_base = "TOSEC_v40.9"
+        ts_base = self.config.get('TS_TOSEC_SUBPATH', 'TOSEC')
         
-        # 00 CARPETAS
+        # 00 CARPETAS - Buscar carpeta de rango Y carpeta del juego dentro
         ts_carpetas_path = os.path.join(self.config['TS_PATH'], ts_base, "00 CARPETAS", letter)
         range_folder_carpetas = self._find_range_folder(ts_carpetas_path, title)
         if range_folder_carpetas:
-            suggestions['TS'].append(f"00 CARPETAS/{letter}/{range_folder_carpetas}/{game_folder}/{filename}")
+            # Buscar la carpeta específica del juego dentro del rango
+            game_subfolder = self._find_game_folder(os.path.join(ts_carpetas_path, range_folder_carpetas), title)
+            if game_subfolder:
+                suggestions['TS'].append(f"00 CARPETAS/{letter}/{range_folder_carpetas}/{game_subfolder}/{filename}")
+            else:
+                suggestions['TS'].append(f"00 CARPETAS/{letter}/{range_folder_carpetas}/{game_folder}/{filename}")
         else:
-            suggestions['TS'].append(f"00 CARPETAS/{letter}/{game_folder}/{filename}")
+            # Buscar carpeta del juego directamente en la letra
+            game_subfolder = self._find_game_folder(ts_carpetas_path, title)
+            if game_subfolder:
+                suggestions['TS'].append(f"00 CARPETAS/{letter}/{game_subfolder}/{filename}")
+            else:
+                suggestions['TS'].append(f"00 CARPETAS/{letter}/{game_folder}/{filename}")
         
         # 01 AÑOS
         for year in years:
@@ -710,23 +825,41 @@ class DirectoryScanner:
                 else:
                     suggestions['TS'].append(f"01 AÑOS/1994-2025 HOMEBREW/{decade}/{year}/{file_type}/{filename}")
         
-        # 02 CLASICOS
+        # 02 CLASICOS - Buscar carpeta de rango Y subcarpeta del juego
         if any(1982 <= y <= 1993 for y in years):
             ts_classic_path = os.path.join(self.config['TS_PATH'], ts_base, "02 CLASICOS/ALFABETO CLASICOS", letter, file_type)
             range_folder = self._find_range_folder(ts_classic_path, title)
             if range_folder:
-                suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
+                # Buscar subcarpeta del juego dentro del rango
+                game_subfolder = self._find_game_folder(os.path.join(ts_classic_path, range_folder), title)
+                if game_subfolder:
+                    suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{range_folder}/{filename}")
             else:
-                suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
+                # Buscar subcarpeta del juego directamente
+                game_subfolder = self._find_game_folder(ts_classic_path, title)
+                if game_subfolder:
+                    suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['TS'].append(f"02 CLASICOS/ALFABETO CLASICOS/{letter}/{file_type}/{filename}")
         
         # 03 HOMEBREW
         if any(1994 <= y <= 2025 for y in years):
             ts_homebrew_path = os.path.join(self.config['TS_PATH'], ts_base, "03 HOMEBREW/ALFABETO HOMEBREW", letter, file_type)
             range_folder = self._find_range_folder(ts_homebrew_path, title)
             if range_folder:
-                suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{range_folder}/{filename}")
+                game_subfolder = self._find_game_folder(os.path.join(ts_homebrew_path, range_folder), title)
+                if game_subfolder:
+                    suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{range_folder}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{range_folder}/{filename}")
             else:
-                suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{filename}")
+                game_subfolder = self._find_game_folder(ts_homebrew_path, title)
+                if game_subfolder:
+                    suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{game_subfolder}/{filename}")
+                else:
+                    suggestions['TS'].append(f"03 HOMEBREW/ALFABETO HOMEBREW/{letter}/{file_type}/{filename}")
         
         return suggestions
 
