@@ -463,16 +463,27 @@ class DirectoryScanner:
     def _is_range_folder(self, folder_name: str) -> bool:
         """
         Detecta carpeta de rango alfabético REAL.
-        Un rango válido tiene formato: "AAA - AZZ" o "A - ADVENTURER" o "ASTONISHING - AE"
-        DEBE tener espacios alrededor del guión para distinguir de nombres como "R-TYPE"
-        Ambas partes pueden tener hasta 12 caracteres (sin espacios internos).
-        NO detecta nombres de juegos como "QUIVIRA - THE ADVENTURE" (que tienen espacios)
+        Formatos válidos:
+        - Con espacios: "A - L", "M - Z", "123 - L"
+        - Sin espacios (cortos): "A-L", "M-Z", "123-L" (máximo 3 caracteres cada lado)
+        - Rangos largos: "AAA - AZZ", "ASTONISHING - AE"
+        NO detecta nombres de juegos como "R-TYPE" o "QUIVIRA - THE ADVENTURE"
         """
-        match = re.match(r'^([A-Z0-9]{1,12})\s+-\s+([A-Z0-9]{1,12})$', folder_name, re.IGNORECASE)
-        return bool(match)
+        # Patrón para rangos cortos sin espacios (ej: A-L, M-Z, 123-L)
+        short_pattern = r'^([A-Z0-9]{1,3})-([A-Z0-9]{1,3})$'
+        if re.match(short_pattern, folder_name, re.IGNORECASE):
+            return True
+        
+        # Patrón para rangos con espacios (ej: A - L, 123 - L, AAA - AZZ)
+        spaced_pattern = r'^([A-Z0-9]{1,12})\s+-\s+([A-Z0-9]{1,12})$'
+        if re.match(spaced_pattern, folder_name, re.IGNORECASE):
+            return True
+        
+        return False
     
     def _parse_range_folder(self, folder_name: str) -> tuple:
         """Parsea carpeta de rango"""
+        # Primero intentar con espacios, luego sin
         parts = re.split(r'\s*-\s*', folder_name)
         if len(parts) >= 2:
             return (parts[0].strip().upper(), parts[1].strip().upper())
@@ -574,7 +585,7 @@ class DirectoryScanner:
     def _find_letter_range_folder(self, base_path: str, title: str) -> Optional[str]:
         """
         Busca carpeta de rango por letra inicial (123-L o M-Z)
-        Para la estructura de AÑOS en TS
+        Para la estructura de AÑOS en TS (especialmente 2019-2025)
         """
         if not os.path.exists(base_path):
             return None
@@ -602,22 +613,25 @@ class DirectoryScanner:
                 
                 # Comparar solo el primer carácter
                 start_char = start[0] if start else ''
-                end_char = end[0] if end else ''
+                end_char = end[-1] if end else ''  # Usar último carácter del end para rangos como "123-L"
                 
-                # Si es número, va en el rango que empiece por número
+                # Si el título empieza por número
                 if first_char.isdigit():
-                    if start_char.isdigit() or start_char == '1':
+                    # Va al rango que empiece por número (123-L)
+                    if start_char.isdigit():
                         return folder
                 else:
-                    # Si es letra, comparar alfabéticamente
-                    if start_char <= first_char <= end_char:
-                        return folder
-                    # Caso especial: 123-L incluye letras A-L
+                    # Si es letra
+                    # Caso especial: 123-L incluye números Y letras A-L
                     if start_char.isdigit() and end_char.isalpha():
-                        if first_char <= end_char:
+                        if 'A' <= first_char <= end_char.upper():
+                            return folder
+                    # Caso normal: M-Z
+                    elif start_char.isalpha() and end_char.isalpha():
+                        if start_char.upper() <= first_char <= end_char.upper():
                             return folder
             
-            # Si no encontró, devolver el último
+            # Si no encontró, devolver el último rango (M-Z normalmente)
             return sorted(range_folders)[-1] if range_folders else None
                     
         except (PermissionError, OSError):
