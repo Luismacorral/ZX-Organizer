@@ -151,11 +151,15 @@
             const [mcSourceCollection, setMcSourceCollection] = useState('TEMP');
             const [mcSourcePath, setMcSourcePath] = useState([]);
             const [mcSourceItems, setMcSourceItems] = useState([]);
-            const [mcSelectedFiles, setMcSelectedFiles] = useState([]);
+            const [mcSelectedItems, setMcSelectedItems] = useState([]); // {path, name, type, size, destinations: [{collection, path, pathDisplay}]}
+            const [mcActiveItem, setMcActiveItem] = useState(null); // Item actualmente seleccionado para asignar destinos
             const [mcDestCollection, setMcDestCollection] = useState('FE');
             const [mcDestPath, setMcDestPath] = useState([]);
             const [mcDestItems, setMcDestItems] = useState([]);
             const [mcLoading, setMcLoading] = useState(false);
+            const [mcPreview, setMcPreview] = useState(null);
+            const [mcShowPreview, setMcShowPreview] = useState(false);
+            const [mcExpandedItems, setMcExpandedItems] = useState([]); // Items expandidos en el panel central
 
             // Compresión
             const [compressCollection, setCompressCollection] = useState('FE');
@@ -1039,52 +1043,223 @@
                 } catch (e) { setError(e.message); }
             };
             
-            const executeNewMulticopy = async () => {
-                if (mcSelectedFiles.length === 0) return;
+            // Añadir item a selección (con array de destinos vacío)
+            const mcAddToSelection = (item) => {
+                if (!mcSelectedItems.find(i => i.path === item.full_path)) {
+                    const newItem = {
+                        path: item.full_path,
+                        name: item.name,
+                        type: item.type,
+                        size: item.size || 0,
+                        destinations: []
+                    };
+                    setMcSelectedItems([...mcSelectedItems, newItem]);
+                    setMcActiveItem(newItem); // Activar automáticamente para asignar destinos
+                    setMcExpandedItems([...mcExpandedItems, item.full_path]); // Expandir automáticamente
+                }
+            };
+            
+            // Quitar item de selección
+            const mcRemoveFromSelection = (path) => {
+                setMcSelectedItems(mcSelectedItems.filter(i => i.path !== path));
+                if (mcActiveItem?.path === path) setMcActiveItem(null);
+                setMcExpandedItems(mcExpandedItems.filter(p => p !== path));
+            };
+            
+            // Seleccionar item activo (para asignarle destinos)
+            const mcSetActiveItem = (item) => {
+                setMcActiveItem(mcActiveItem?.path === item.path ? null : item);
+            };
+            
+            // Toggle expandir/contraer item
+            const mcToggleExpand = (path) => {
+                setMcExpandedItems(mcExpandedItems.includes(path) 
+                    ? mcExpandedItems.filter(p => p !== path) 
+                    : [...mcExpandedItems, path]);
+            };
+            
+            // Añadir destino al item activo
+            const mcAddDestinationToItem = async () => {
+                if (!mcActiveItem) {
+                    setError('Selecciona primero un item en el panel central');
+                    return;
+                }
                 
-                // Obtener la ruta completa del destino actual
-                let fullDestPath = '';
+                let fullPath = '';
+                let pathDisplay = '';
                 
                 if (mcDestPath.length > 0) {
-                    // Usamos la última ruta del breadcrumb (ruta completa)
-                    fullDestPath = mcDestPath[mcDestPath.length - 1];
+                    fullPath = mcDestPath[mcDestPath.length - 1];
+                    pathDisplay = `${mcDestCollection}:/${mcDestPath.map(p => p.split(/[/\\]/).pop()).join('/')}`;
                 } else {
-                    // Estamos en la raíz, necesitamos obtener el path base de la colección
                     const r = await fetch(`${API_BASE}/multicopy/browse`);
                     const d = await r.json();
                     const rootItem = d.items.find(i => i.name === `[${mcDestCollection}]`);
                     if (rootItem) {
-                        fullDestPath = rootItem.full_path;
+                        fullPath = rootItem.full_path;
+                        pathDisplay = `${mcDestCollection}:/`;
                     }
                 }
-
-                if (!fullDestPath) {
-                    setError('No se pudo determinar la ruta de destino');
+                
+                if (!fullPath) return;
+                
+                // Actualizar el item activo con el nuevo destino
+                setMcSelectedItems(mcSelectedItems.map(item => {
+                    if (item.path === mcActiveItem.path) {
+                        // Verificar que no esté duplicado
+                        if (item.destinations.find(d => d.path === fullPath)) {
+                            setError('Este destino ya está asignado');
+                            return item;
+                        }
+                        const updatedItem = {
+                            ...item,
+                            destinations: [...item.destinations, {
+                                collection: mcDestCollection,
+                                path: fullPath,
+                                pathDisplay: pathDisplay
+                            }]
+                        };
+                        setMcActiveItem(updatedItem);
+                        return updatedItem;
+                    }
+                    return item;
+                }));
+                setSuccess(`Destino añadido a "${mcActiveItem.name}"`);
+            };
+            
+            // Quitar destino de un item específico
+            const mcRemoveDestinationFromItem = (itemPath, destPath) => {
+                setMcSelectedItems(mcSelectedItems.map(item => {
+                    if (item.path === itemPath) {
+                        const updatedItem = {
+                            ...item,
+                            destinations: item.destinations.filter(d => d.path !== destPath)
+                        };
+                        if (mcActiveItem?.path === itemPath) setMcActiveItem(updatedItem);
+                        return updatedItem;
+                    }
+                    return item;
+                }));
+            };
+            
+            // Copiar destinos de un item a todos los demás
+            const mcCopyDestinationsToAll = (sourceItem) => {
+                if (sourceItem.destinations.length === 0) {
+                    setError('El item no tiene destinos');
                     return;
                 }
-
+                setMcSelectedItems(mcSelectedItems.map(item => ({
+                    ...item,
+                    destinations: [...sourceItem.destinations]
+                })));
+                setSuccess(`Destinos copiados a todos los items`);
+            };
+            
+            // Generar vista previa
+            const mcGeneratePreview = () => {
+                const itemsWithDest = mcSelectedItems.filter(i => i.destinations.length > 0);
+                if (itemsWithDest.length === 0) {
+                    setError('Ningún item tiene destinos asignados');
+                    return;
+                }
+                
+                const totalOperations = itemsWithDest.reduce((sum, item) => sum + item.destinations.length, 0);
+                
+                const preview = {
+                    items: itemsWithDest,
+                    totalItems: itemsWithDest.length,
+                    totalOperations: totalOperations
+                };
+                
+                setMcPreview(preview);
+                setMcShowPreview(true);
+            };
+            
+            // Ejecutar multicopia - cada item a sus destinos específicos
+            const executeNewMulticopy = async () => {
+                const itemsWithDest = mcSelectedItems.filter(i => i.destinations.length > 0);
+                if (itemsWithDest.length === 0) {
+                    setError('Ningún item tiene destinos asignados');
+                    return;
+                }
+                
                 setProcessing(true);
+                setMcShowPreview(false);
+                
+                let totalCopied = 0;
+                let totalErrors = 0;
+                
                 try {
-                    const r = await fetch(`${API_BASE}/multicopy/execute`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            files: mcSelectedFiles,
-                            dest_collection: mcDestCollection,
-                            full_dest_path: fullDestPath
-                        })
-                    });
-                    const d = await r.json();
-                    if (d.success) {
-                        setSuccess(`Copiados ${d.copied} archivos.`);
-                        // NO limpiamos la selección - el usuario debe hacerlo manualmente con el botón "Limpiar"
-                        // Refrescar destino
-                        loadMcDestContents(mcDestCollection, mcDestPath);
+                    // Para cada item, copiar a cada uno de sus destinos
+                    for (const item of itemsWithDest) {
+                        for (const dest of item.destinations) {
+                            const r = await fetch(`${API_BASE}/multicopy/execute`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    files: [item.path],
+                                    dest_collection: dest.collection,
+                                    full_dest_path: dest.path
+                                })
+                            });
+                            const d = await r.json();
+                            if (d.success) {
+                                totalCopied += d.copied || 0;
+                            } else {
+                                totalErrors++;
+                            }
+                        }
+                    }
+                    
+                    if (totalCopied > 0) {
+                        setSuccess(`Copiados ${totalCopied} elementos`);
+                    }
+                    if (totalErrors > 0) {
+                        setError(`${totalErrors} operación(es) con errores`);
+                    }
+                    
+                    // Refrescar
+                    loadMcDestContents(mcDestCollection, mcDestPath);
+                    loadMcSourceContents(mcSourceCollection, mcSourcePath);
+                    
+                } catch (e) { setError(e.message); }
+                finally { 
+                    setProcessing(false); 
+                    setMcPreview(null);
+                }
+            };
+            
+            // Borrar item en destino
+            const mcDeleteInDest = async (itemPath, itemName, isFolder) => {
+                if (!confirm(`¿Eliminar ${isFolder ? 'carpeta' : 'archivo'} "${itemName}" del destino?${isFolder ? '\n\n⚠️ Se borrará TODO el contenido.' : ''}`)) return;
+                
+                try {
+                    if (isFolder) {
+                        const r = await fetch(`${API_BASE}/folder/delete`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ full_path: itemPath, force: true })
+                        });
+                        const d = await r.json();
+                        if (d.success) {
+                            setSuccess(`Carpeta "${itemName}" eliminada`);
+                            loadMcDestContents(mcDestCollection, mcDestPath);
+                        } else {
+                            setError(d.error);
+                        }
                     } else {
-                        setError(d.error || 'Error al copiar');
+                        const r = await fetch(`${API_BASE}/files/delete`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ files: [itemPath] })
+                        });
+                        const d = await r.json();
+                        if (d.success_count > 0) {
+                            setSuccess(`Archivo "${itemName}" eliminado`);
+                            loadMcDestContents(mcDestCollection, mcDestPath);
+                        }
                     }
                 } catch (e) { setError(e.message); }
-                finally { setProcessing(false); }
             };
 
             // Initial load for multicopy
@@ -1337,133 +1512,194 @@
 
                         {activeTab === 'multicopy' && (
                             <div className="h-full flex flex-col bg-black/30 border border-purple-500/30 rounded p-3 overflow-hidden">
-                                <h2 className="font-bold mb-3 flex items-center gap-2"><Icon name="copy" className="w-4 h-4 text-blue-400" />Multicopia v2</h2>
-                                <div className="flex-1 flex gap-4 overflow-hidden">
-                                    {/* Source Column */}
-                                    <div className="flex-1 flex flex-col bg-gray-800/30 rounded border border-gray-700 overflow-hidden">
-                                        <div className="p-2 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
+                                <h2 className="font-bold mb-3 flex items-center gap-2 shrink-0"><Icon name="copy" className="w-4 h-4 text-blue-400" />Multicopia v3 - Múltiples Orígenes y Destinos</h2>
+                                <div className="flex-1 flex gap-3 overflow-hidden min-h-0">
+                                    {/* Panel ORIGEN */}
+                                    <div className="w-1/3 flex flex-col bg-gray-800/30 rounded border border-blue-500/30 overflow-hidden">
+                                        <div className="p-2 bg-blue-900/30 border-b border-blue-500/30 flex justify-between items-center shrink-0">
+                                            <span className="text-xs font-bold text-blue-400">📂 ORIGEN</span>
                                             <div className="flex gap-1">
                                                 {['TEMP', 'FE', 'TS'].map(c => (
-                                                    <button key={c} onClick={() => { setMcSourceCollection(c); setMcSourcePath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcSourceCollection === c ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c}</button>
+                                                    <button key={c} onClick={() => { setMcSourceCollection(c); setMcSourcePath([]); }} className={`px-2 py-0.5 rounded text-xs font-bold ${mcSourceCollection === c ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c}</button>
                                                 ))}
                                             </div>
-                                            <span className="text-xs text-gray-400">{mcSourceItems.length} items</span>
                                         </div>
-                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap">
-                                            <button onClick={() => setMcSourcePath([])} className="text-blue-400 font-bold hover:underline">ROOT</button>
+                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap shrink-0">
+                                            <button onClick={() => setMcSourcePath([])} className="text-blue-400 font-bold hover:underline">/</button>
                                             {mcSourcePath.map((p, i) => (
                                                 <React.Fragment key={i}>
                                                     <span className="text-gray-600">/</span>
-                                                    <button onClick={() => { const newPath = mcSourcePath.slice(0, i + 1); setMcSourcePath(newPath); }} className="text-gray-300 hover:text-white truncate max-w-[100px]" title={p}>{p.split(/[/\\]/).pop()}</button>
+                                                    <button onClick={() => setMcSourcePath(mcSourcePath.slice(0, i + 1))} className="text-gray-300 hover:text-white truncate max-w-[80px]">{p.split(/[/\\]/).pop()}</button>
                                                 </React.Fragment>
                                             ))}
-                                            {mcSourcePath.length > 0 && <button onClick={() => { const newPath = mcSourcePath.slice(0, -1); setMcSourcePath(newPath); }} className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded hover:bg-gray-600">⬆</button>}
+                                            <span className="ml-auto text-gray-500">({mcSourceItems.length})</span>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
-                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-6 h-6 text-blue-400 animate-spin" /></div> :
-                                                (mcSourceItems || []).map((item, i) => {
-                                                    if (!item) return null;
-                                                    const isFile = item.type === 'file';
-                                                    const canEmulate = isFile && isEmulable(item.name);
+                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-5 h-5 text-blue-400" /></div> :
+                                                mcSourceItems.map((item, i) => {
+                                                    const isSelected = mcSelectedItems.find(s => s.path === item.full_path);
                                                     return (
-                                                        <div key={i} className={`p-1.5 rounded text-xs flex items-center gap-2 group ${mcSelectedFiles.includes(item.full_path) ? 'bg-blue-900/50 border border-blue-500/50' : 'hover:bg-gray-700/50 border border-transparent'}`}>
-                                                            <div className="flex-1 flex items-center gap-2 cursor-pointer min-w-0" onClick={() => {
-                                                                if (item.type === 'folder') {
-                                                                    setMcSourcePath([...mcSourcePath, item.full_path]);
-                                                                } else {
-                                                                    if (mcSelectedFiles.includes(item.full_path)) {
-                                                                        setMcSelectedFiles(mcSelectedFiles.filter(f => f !== item.full_path));
-                                                                    } else {
-                                                                        setMcSelectedFiles([...mcSelectedFiles, item.full_path]);
-                                                                    }
-                                                                }
-                                                            }}>
+                                                        <div key={i} className={`p-1.5 rounded text-xs flex items-center gap-2 group cursor-pointer ${isSelected ? 'bg-blue-600/40 border border-blue-500' : 'hover:bg-gray-700/50 border border-transparent'}`}>
+                                                            <div className="flex-1 flex items-center gap-2 min-w-0" onClick={() => item.type === 'folder' ? setMcSourcePath([...mcSourcePath, item.full_path]) : null}>
                                                                 <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 shrink-0 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
-                                                                <span className="truncate">{item.name || 'Unknown'}</span>
+                                                                <span className="truncate">{item.name}</span>
                                                             </div>
-                                                            {isFile && <span className="text-gray-500 text-xs shrink-0 w-14 text-right">{item.size ? (item.size / 1024).toFixed(0) : '0'}KB</span>}
-                                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                                {canEmulate && <button onClick={(e) => { e.stopPropagation(); mcEmulateItem(item.full_path, item.name); }} className="p-1 bg-green-600 hover:bg-green-500 rounded" title="Emular"><Icon name="play" className="w-3 h-3" /></button>}
-                                                                <button onClick={(e) => { e.stopPropagation(); mcRenameItem(item.full_path, item.name); }} className="p-1 bg-blue-600 hover:bg-blue-500 rounded" title="Renombrar"><Icon name="edit" className="w-3 h-3" /></button>
-                                                                <button onClick={(e) => { e.stopPropagation(); mcDeleteItem(item.full_path, item.name, item.type === 'folder'); }} className="p-1 bg-red-600 hover:bg-red-500 rounded" title="Eliminar"><Icon name="trash" className="w-3 h-3" /></button>
-                                                            </div>
+                                                            {item.type === 'file' && <span className="text-gray-500 text-xs shrink-0">{(item.size/1024).toFixed(0)}K</span>}
+                                                            <button onClick={(e) => { e.stopPropagation(); isSelected ? mcRemoveFromSelection(item.full_path) : mcAddToSelection(item); }} className={`p-1 rounded shrink-0 ${isSelected ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'}`} title={isSelected ? 'Quitar' : 'Añadir'}>
+                                                                <span className="text-xs">{isSelected ? '−' : '+'}</span>
+                                                            </button>
                                                         </div>
                                                     );
                                                 })}
                                         </div>
-                                        {/* Selected Files Area */}
-                                        <div className="h-80 border-t border-gray-700 bg-gray-900/30 flex flex-col">
-                                            <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
-                                                <span className="text-xs font-bold text-yellow-400">Seleccionados ({mcSelectedFiles.length})</span>
-                                                {mcSelectedFiles.length > 0 && <button onClick={() => setMcSelectedFiles([])} className="text-xs text-red-400 hover:text-red-300">Limpiar</button>}
-                                            </div>
-                                            <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
-                                                {mcSelectedFiles.map((f, i) => (
-                                                    <div key={i} className="flex justify-between items-center p-1 bg-gray-800/50 rounded text-xs group">
-                                                        <span className="truncate flex-1 text-gray-300" title={f}>{f.split(/[/\\]/).pop()}</span>
-                                                        <button onClick={() => setMcSelectedFiles(mcSelectedFiles.filter(x => x !== f))} className="text-red-500 opacity-0 group-hover:opacity-100 px-1">✕</button>
+                                    </div>
+
+                                    {/* Panel SELECCIÓN (centro) - Items con sus destinos */}
+                                    <div className="w-1/3 flex flex-col bg-gray-800/30 rounded border border-yellow-500/30 overflow-hidden">
+                                        <div className="p-2 bg-yellow-900/30 border-b border-yellow-500/30 flex justify-between items-center shrink-0">
+                                            <span className="text-xs font-bold text-yellow-400">📋 ITEMS Y DESTINOS ({mcSelectedItems.length})</span>
+                                            {mcSelectedItems.length > 0 && <button onClick={() => { setMcSelectedItems([]); setMcActiveItem(null); }} className="text-xs text-red-400 hover:text-red-300">Limpiar todo</button>}
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto p-1 space-y-1">
+                                            {mcSelectedItems.length === 0 ? (
+                                                <div className="text-center text-gray-600 text-xs py-4">
+                                                    <p>1. Añade archivos/carpetas del panel izquierdo</p>
+                                                    <p className="mt-1">2. Selecciona cada item y añade destinos</p>
+                                                </div>
+                                            ) : mcSelectedItems.map((item, i) => (
+                                                <div key={i} className={`rounded border ${mcActiveItem?.path === item.path ? 'border-yellow-500 bg-yellow-900/20' : 'border-gray-700 bg-gray-800/50'}`}>
+                                                    {/* Cabecera del item */}
+                                                    <div className="p-1.5 flex items-center gap-2 cursor-pointer" onClick={() => mcSetActiveItem(item)}>
+                                                        <button onClick={(e) => { e.stopPropagation(); mcToggleExpand(item.path); }} className="text-gray-400 hover:text-white text-xs w-4">
+                                                            {mcExpandedItems.includes(item.path) ? '▼' : '▶'}
+                                                        </button>
+                                                        <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3 h-3 shrink-0 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
+                                                        <span className="truncate flex-1 text-xs" title={item.path}>{item.name}</span>
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded ${item.destinations.length > 0 ? 'bg-green-600' : 'bg-gray-600'}`}>
+                                                            {item.destinations.length}
+                                                        </span>
+                                                        <button onClick={(e) => { e.stopPropagation(); mcRemoveFromSelection(item.path); }} className="text-red-500 hover:text-red-400 text-xs">✕</button>
                                                     </div>
-                                                ))}
-                                                {mcSelectedFiles.length === 0 && <div className="text-center text-gray-600 text-xs py-4">Selecciona archivos arriba</div>}
+                                                    {/* Destinos del item (expandible) */}
+                                                    {mcExpandedItems.includes(item.path) && (
+                                                        <div className="px-2 pb-2 space-y-1 border-t border-gray-700/50 mt-1 pt-1">
+                                                            {item.destinations.length === 0 ? (
+                                                                <div className="text-xs text-gray-500 italic">Sin destinos asignados</div>
+                                                            ) : item.destinations.map((dest, j) => (
+                                                                <div key={j} className="flex items-center gap-1 text-xs bg-gray-900/50 rounded px-1.5 py-1 group">
+                                                                    <span className={`px-1 py-0.5 rounded text-xs font-bold ${dest.collection === 'FE' ? 'bg-blue-600' : dest.collection === 'TS' ? 'bg-cyan-600' : 'bg-purple-600'}`}>{dest.collection}</span>
+                                                                    <span className="truncate flex-1 text-gray-400" title={dest.path}>{dest.pathDisplay}</span>
+                                                                    <button onClick={() => mcRemoveDestinationFromItem(item.path, dest.path)} className="text-red-500 hover:text-red-400 opacity-0 group-hover:opacity-100">✕</button>
+                                                                </div>
+                                                            ))}
+                                                            {item.destinations.length > 0 && (
+                                                                <button onClick={() => mcCopyDestinationsToAll(item)} className="text-xs text-cyan-400 hover:text-cyan-300 mt-1">
+                                                                    📋 Copiar destinos a todos
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Info del item activo */}
+                                        {mcActiveItem && (
+                                            <div className="p-2 bg-yellow-900/40 border-t border-yellow-500/30 shrink-0">
+                                                <div className="text-xs text-yellow-300">
+                                                    <strong>Activo:</strong> {mcActiveItem.name}
+                                                </div>
+                                                <div className="text-xs text-gray-400 mt-0.5">
+                                                    Navega a la derecha y pulsa "Añadir destino"
+                                                </div>
                                             </div>
+                                        )}
+                                        {/* Botones de acción */}
+                                        <div className="flex gap-2 p-2 border-t border-gray-700 shrink-0">
+                                            <button onClick={mcGeneratePreview} disabled={mcSelectedItems.filter(i => i.destinations.length > 0).length === 0} className={`flex-1 px-3 py-2 rounded font-bold text-sm flex items-center justify-center gap-2 ${mcSelectedItems.filter(i => i.destinations.length > 0).length > 0 ? 'bg-yellow-600 hover:bg-yellow-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+                                                🔍 Preview
+                                            </button>
+                                            <button onClick={executeNewMulticopy} disabled={mcSelectedItems.filter(i => i.destinations.length > 0).length === 0 || processing} className={`flex-1 px-3 py-2 rounded font-bold text-sm flex items-center justify-center gap-2 ${mcSelectedItems.filter(i => i.destinations.length > 0).length > 0 && !processing ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+                                                {processing ? <Icon name="loader" className="w-4 h-4" /> : '📦'} Copiar
+                                            </button>
                                         </div>
                                     </div>
 
-                                    {/* Arrow */}
-                                    <div className="flex flex-col justify-center items-center gap-2">
-                                        <Icon name="arrow-right" className="w-6 h-6 text-gray-500" />
-                                    </div>
-
-                                    {/* Destination Column */}
-                                    <div className="flex-1 flex flex-col bg-gray-800/30 rounded border border-gray-700 overflow-hidden">
-                                        <div className="p-2 bg-gray-900/50 border-b border-gray-700 flex justify-between items-center">
+                                    {/* Panel DESTINO */}
+                                    <div className="w-1/3 flex flex-col bg-gray-800/30 rounded border border-cyan-500/30 overflow-hidden">
+                                        <div className="p-2 bg-cyan-900/30 border-b border-cyan-500/30 flex justify-between items-center shrink-0">
+                                            <span className="text-xs font-bold text-cyan-400">📁 DESTINO</span>
                                             <div className="flex gap-1">
                                                 {['FE', 'TS', 'UPD'].map(c => (
-                                                    <button key={c} onClick={() => { setMcDestCollection(c); setMcDestPath([]); }} className={`px-3 py-1 rounded text-xs font-bold ${mcDestCollection === c ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c === 'UPD' ? 'UPDATES' : c}</button>
+                                                    <button key={c} onClick={() => { setMcDestCollection(c); setMcDestPath([]); }} className={`px-2 py-0.5 rounded text-xs font-bold ${mcDestCollection === c ? 'bg-cyan-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>{c === 'UPD' ? 'UPD' : c}</button>
                                                 ))}
                                             </div>
-                                            <span className="text-xs text-gray-400">Destino</span>
                                         </div>
-                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap">
-                                            <button onClick={() => setMcDestPath([])} className="text-cyan-400 font-bold hover:underline">ROOT</button>
+                                        <div className="px-2 py-1 bg-gray-800/50 border-b border-gray-700 flex items-center gap-1 text-xs overflow-x-auto whitespace-nowrap shrink-0">
+                                            <button onClick={() => setMcDestPath([])} className="text-cyan-400 font-bold hover:underline">/</button>
                                             {mcDestPath.map((p, i) => (
                                                 <React.Fragment key={i}>
                                                     <span className="text-gray-600">/</span>
-                                                    <button onClick={() => { const newPath = mcDestPath.slice(0, i + 1); setMcDestPath(newPath); }} className="text-gray-300 hover:text-white truncate max-w-[100px]" title={p}>{p.split(/[/\\]/).pop()}</button>
+                                                    <button onClick={() => setMcDestPath(mcDestPath.slice(0, i + 1))} className="text-gray-300 hover:text-white truncate max-w-[80px]">{p.split(/[/\\]/).pop()}</button>
                                                 </React.Fragment>
                                             ))}
-                                            {mcDestPath.length > 0 && <button onClick={() => { const newPath = mcDestPath.slice(0, -1); setMcDestPath(newPath); }} className="ml-auto px-1.5 py-0.5 bg-gray-700 rounded hover:bg-gray-600">⬆</button>}
+                                            <span className="ml-auto text-gray-500">({mcDestItems.length})</span>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-1 space-y-0.5">
-                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-6 h-6 text-cyan-400 animate-spin" /></div> :
-                                                (mcDestItems || []).map((item, i) => {
-                                                    if (!item) return null;
-                                                    return (
-                                                        <div key={i} onClick={() => {
-                                                            if (item.type === 'folder') {
-                                                                setMcDestPath([...mcDestPath, item.full_path]);
-                                                            }
-                                                        }} className={`p-1.5 rounded text-xs flex items-center gap-2 ${item.type === 'folder' ? 'cursor-pointer hover:bg-gray-700/50' : 'opacity-50'}`}>
-                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 ${item.type === 'folder' ? 'text-cyan-400' : 'text-gray-600'}`} />
-                                                            <span className="truncate flex-1">{item.name || 'Unknown'}</span>
+                                            {mcLoading ? <div className="flex justify-center p-4"><Icon name="loader" className="w-5 h-5 text-cyan-400" /></div> :
+                                                mcDestItems.map((item, i) => (
+                                                    <div key={i} className="p-1.5 rounded text-xs flex items-center gap-2 group hover:bg-gray-700/50">
+                                                        <div className="flex-1 flex items-center gap-2 min-w-0 cursor-pointer" onClick={() => item.type === 'folder' && setMcDestPath([...mcDestPath, item.full_path])}>
+                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-3.5 h-3.5 shrink-0 ${item.type === 'folder' ? 'text-cyan-400' : 'text-gray-500'}`} />
+                                                            <span className="truncate">{item.name}</span>
                                                         </div>
-                                                    );
-                                                })}
+                                                        <button onClick={(e) => { e.stopPropagation(); mcDeleteInDest(item.full_path, item.name, item.type === 'folder'); }} className="p-1 bg-red-600/50 hover:bg-red-500 rounded opacity-0 group-hover:opacity-100" title="Eliminar"><Icon name="trash" className="w-2.5 h-2.5" /></button>
+                                                    </div>
+                                                ))}
                                         </div>
-                                        <div className="p-2 bg-gray-900/50 border-t border-gray-700">
-                                            <div className="text-xs text-gray-400 mb-1">Carpeta destino actual:</div>
-                                            <div className="text-xs font-mono bg-black/30 p-1.5 rounded border border-gray-700 truncate text-cyan-300">
-                                                {mcDestPath.length > 0 ? mcDestPath[mcDestPath.length - 1] : `[Raíz de ${mcDestCollection === 'UPD' ? 'UPDATES_TOSEC' : mcDestCollection}]`}
-                                            </div>
+                                        <div className="p-2 bg-gray-900/50 border-t border-gray-700 shrink-0">
+                                            <button onClick={mcAddDestinationToItem} disabled={!mcActiveItem} className={`w-full px-3 py-2 rounded font-bold text-sm flex items-center justify-center gap-2 ${mcActiveItem ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+                                                ➕ Añadir destino {mcActiveItem ? `a "${mcActiveItem.name.substring(0,15)}${mcActiveItem.name.length > 15 ? '...' : ''}"` : '(selecciona item)'}
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="mt-3 flex justify-end">
-                                    <button onClick={executeNewMulticopy} disabled={mcSelectedFiles.length === 0 || processing} className={`px-6 py-2 rounded font-bold text-sm flex items-center gap-2 ${mcSelectedFiles.length > 0 && !processing ? 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-900/20' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
-                                        {processing ? <Icon name="loader" className="w-4 h-4" /> : <Icon name="copy" className="w-4 h-4" />}
-                                        {processing ? 'Copiando...' : `Copiar ${mcSelectedFiles.length} archivos`}
-                                    </button>
-                                </div>
+
+                                {/* Modal de vista previa */}
+                                {mcShowPreview && mcPreview && (
+                                    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                                        <div className="bg-gray-900 border border-purple-500/50 rounded-lg p-4 max-w-3xl w-full max-h-[80vh] overflow-auto">
+                                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="search" className="w-5 h-5 text-yellow-400" />Vista previa de copia</h3>
+                                            <div className="space-y-3">
+                                                {mcPreview.items.map((item, i) => (
+                                                    <div key={i} className="bg-gray-800/50 rounded p-3">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <Icon name={item.type === 'folder' ? 'folder' : 'file'} className={`w-4 h-4 ${item.type === 'folder' ? 'text-yellow-400' : 'text-gray-400'}`} />
+                                                            <span className="font-bold text-sm">{item.name}</span>
+                                                            <span className="text-gray-500 text-xs">→ {item.destinations.length} destino(s)</span>
+                                                        </div>
+                                                        <div className="pl-6 space-y-1">
+                                                            {item.destinations.map((dest, j) => (
+                                                                <div key={j} className="text-xs flex items-center gap-2 text-gray-300">
+                                                                    <span className={`px-1.5 py-0.5 rounded font-bold ${dest.collection === 'FE' ? 'bg-blue-600' : dest.collection === 'TS' ? 'bg-cyan-600' : 'bg-purple-600'}`}>{dest.collection}</span>
+                                                                    <span className="truncate">{dest.pathDisplay}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <div className="bg-yellow-900/30 border border-yellow-500/30 rounded p-3 text-sm">
+                                                    <strong>Total:</strong> {mcPreview.totalItems} items → {mcPreview.totalOperations} operaciones de copia
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-2 mt-4">
+                                                <button onClick={() => setMcShowPreview(false)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">Cancelar</button>
+                                                <button onClick={executeNewMulticopy} className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded font-bold flex items-center gap-2">
+                                                    <Icon name="copy" className="w-4 h-4" /> Ejecutar copia
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 

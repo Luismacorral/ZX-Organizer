@@ -415,11 +415,27 @@ def multicopy_execute():
         if not os.path.isabs(src):
             src = os.path.join(CONFIG['TEMP_PATH'], src)
         if not os.path.exists(src):
-            results.append({'file': os.path.basename(src), 'status': 'error', 'message': 'Archivo no encontrado'})
+            results.append({'file': os.path.basename(src), 'status': 'error', 'message': 'No encontrado'})
             continue
         try:
-            shutil.copy2(src, os.path.join(full_dest_path, os.path.basename(src)))
-            results.append({'file': os.path.basename(src), 'status': 'ok'})
+            dest_item = os.path.join(full_dest_path, os.path.basename(src))
+            if os.path.isdir(src):
+                # Es una carpeta - usar copytree
+                if os.path.exists(dest_item):
+                    # Si existe, copiar contenido sobrescribiendo
+                    for root, dirs, files_in_dir in os.walk(src):
+                        rel_path = os.path.relpath(root, src)
+                        dest_dir = os.path.join(dest_item, rel_path) if rel_path != '.' else dest_item
+                        os.makedirs(dest_dir, exist_ok=True)
+                        for file in files_in_dir:
+                            shutil.copy2(os.path.join(root, file), os.path.join(dest_dir, file))
+                else:
+                    shutil.copytree(src, dest_item)
+                results.append({'file': os.path.basename(src), 'status': 'ok', 'type': 'folder'})
+            else:
+                # Es un archivo
+                shutil.copy2(src, dest_item)
+                results.append({'file': os.path.basename(src), 'status': 'ok', 'type': 'file'})
             success_count += 1
         except Exception as e:
             results.append({'file': os.path.basename(src), 'status': 'error', 'message': str(e)})
